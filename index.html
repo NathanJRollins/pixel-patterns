@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8">
+		<title>pixel-patterns</title>
+		<link rel="stylesheet" href="style.css">
+	</head>
+	<body>
+		<div id="pixel-pattern-div">
+			<span>
+				<input id="draw-range-width" type="range" oninput="drawPanelDimensionsChanged()" min="1" max="10" class="slider">
+				<input id="draw-range-height" type="range" oninput="drawPanelDimensionsChanged()" min="1" max="10" class="slider">
+			</span>
+			<div>
+				<canvas id="drawing-panel"></canvas>
+				<canvas id="display-panel"></canvas>
+			</div>
+		</div>
+
+		<script src="script.js"></script>
+	</body>
+<!-- Make cross-browser -->
+</html>

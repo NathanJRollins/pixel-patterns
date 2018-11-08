@@ -1,0 +1,38 @@
+body {
+	background-color: grey;
+}
+
+#pixel-pattern-div {
+	background-color: white;
+	width: 75%;
+	margin: auto;
+	padding: 10px;
+}
+
+/* #draw-range-height {
+	display: inline-block;
+	transform: rotate(-90deg);
+} */
+
+canvas {
+	width: 29em;
+	height: 29em;
+	display: inline-block;
+	border-style: solid;
+	border-color: black;
+	border-width: 1px;
+	/* image-rendering: optimizeSpeed;
+	image-rendering: -moz-crisp-edges;
+	image-rendering: -webkit-optimize-contrast;
+	image-rendering: -o-crisp-edges;
+	image-rendering: pixelated;
+	-ms-interpolation-mode: nearest-neighbor; */
+}
+
+#drawing-panel {
+	background-color: azure;
+}
+
+#display-panel {
+	background-color: beige;
+}
