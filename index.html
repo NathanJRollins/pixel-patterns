@@ -10,6 +10,7 @@
 			<span>
 				<input id="draw-range-width" type="range" oninput="drawPanelDimensionsChanged()" min="1" max="10" class="slider">
 				<input id="draw-range-height" type="range" oninput="drawPanelDimensionsChanged()" min="1" max="10" class="slider">
+				<input id="zoom-level" type="range" oninput="zoomChanged()" min="1" max="20" step="1" value="10" class="slider">
 			</span>
 			<div>
 				<canvas id="drawing-panel"></canvas>
@@ -17,8 +18,8 @@
 			</div>
 			<div>
 				<button type="button" onclick="clearPanel()">Clear</button>
-				<input id="chosenColor" type="color" value="#cc33cc">
-				<input id="chosenAlpha" type="range" min="0.0" max="1.0" step="0.01" value="0.5" class="slider" oninput="updateColorDisplayOpacity()">
+				<input id="chosen-color" type="color" value="#cc33cc">
+				<input id="chosen-alpha" type="range" min="0.0" max="1.0" step="0.01" value="0.5" class="slider" oninput="updateColorDisplayOpacity()">
 				<button type="button" onclick="fillPanel()">Fill</button>
 			</div>
 		</div>

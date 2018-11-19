@@ -1,26 +1,27 @@
 /*****************************************************
 Todo:
-	Fix in Edge
-	Pattern display zoom slider (more easily visible patterns on more pixel-dense displays)
+	Pattern display zoom slider (more easily view patterns on more pixel-dense displays)
 	Drag to draw/erase
 	Download as preset size (detect browser's as one of them) or custom input size
-	Sharpen display - pattern should appear pixel-perfectly
 	URL to current pattern
+	Save/load patterns
+	Optimise (primarily pattern-repeating part of code)
 	Prettify UI
-	Basic tools (line, bucket, dropper, etc.)
+	Sell soul to documentation devil (+ readme.md)
+	Settings button/menu to further adjust min/max parameters, etc.
+	Sharpen display - pattern should appear pixel-perfectly
 
 (Maybe)
+	Basic tools (line, bucket, dropper, etc.)
 	Preset/example patterns
-	Save/load patterns
 	Undo/redo (eh)
-	Sell soul to documentation devil (+ readme.md)
-	Optimise (primarily pattern-repeating part of code)
 
 *******************************************************/
 
 var desiredNumOfColumns;
 var desiredNumOfRows;
 var drawnPixels;
+var zoomLevel = 1;
 
 function drawPanelDimensionsChanged() {
   setDrawPanelDimensions(
@@ -123,10 +124,10 @@ function drawDisplayPanel() {
 	canvas.width = displayWidth;
 	canvas.height = displayHeight;
 
-	for ( var y = 0; y < displayHeight; y++ ) {
-		for ( var x = 0; x < displayWidth; x++ ) {
+	for ( var y = 0; y < displayHeight/zoomLevel; y++ ) {
+		for ( var x = 0; x < displayWidth/zoomLevel; x++ ) {
 			ctx.fillStyle = drawnPixels[x%desiredNumOfColumns][y%desiredNumOfRows];
-			ctx.fillRect(x, y, 1, 1);
+			ctx.fillRect(zoomLevel*x, zoomLevel*y, zoomLevel, zoomLevel);
 		}
 	}
 }
@@ -141,13 +142,13 @@ function fillPanel() {
 
 function getRgbaFormattedCurrentColor() {
 	// split hex value from color input into an object with RGBA components
-	var chosenColor = document.getElementById("chosenColor").value.toString(16);
+	var chosenColor = document.getElementById("chosen-color").value.toString(16);
 	var splitColor = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(chosenColor);
 	var colorObject = {
 		r: parseInt(splitColor[1], 16),
 		g: parseInt(splitColor[2], 16),
 		b: parseInt(splitColor[3], 16),
-		a: document.getElementById("chosenAlpha").valueAsNumber
+		a: document.getElementById("chosen-alpha").valueAsNumber
 	};
 	// Convert that object into the desired formatted string
 	var formattedString = `rgba(${colorObject.r},${colorObject.g},${colorObject.b},${colorObject.a})`;
@@ -156,9 +157,15 @@ function getRgbaFormattedCurrentColor() {
 
 // Change color display's opacity, since the color chooser doesn't implement transparency by default
 function updateColorDisplayOpacity() {
-	document.getElementById("chosenColor").style.opacity = document.getElementById("chosenAlpha").valueAsNumber;
+	document.getElementById("chosen-color").style.opacity = document.getElementById("chosen-alpha").valueAsNumber;
 }
 
-// Trigger once to initalize
+function zoomChanged() {
+	zoomLevel = document.getElementById("zoom-level").valueAsNumber;
+	drawDisplayPanel();
+}
+
+// Trigger once to initalize slider values & display
 drawPanelDimensionsChanged();
 updateColorDisplayOpacity();
+zoomChanged();
