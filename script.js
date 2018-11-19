@@ -159,3 +159,4 @@ function updateColorDisplayOpacity() {
 
 // Trigger once to initalize
 drawPanelDimensionsChanged();
+updateColorDisplayOpacity();
