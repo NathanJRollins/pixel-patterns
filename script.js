@@ -1,6 +1,5 @@
 /*****************************************************
 Todo:
-	Fill all with current color
 	Drag to draw/erase
 	Download as preset size (detect browser's as one of them) or custom input size
 	Sharpen display - pattern should appear pixel-perfectly
@@ -42,10 +41,10 @@ function setDrawPanelDimensions(x, y) {
   initializeDrawnPixelArray();
 }
 
-function initializeDrawnPixelArray() {
+function initializeDrawnPixelArray(defaultColor = "#ffffff00") {
 	drawnPixels = Array();
   for (var x = 0; x < desiredPixelWidth; x++)
-		drawnPixels[x] = Array(parseInt(desiredPixelHeight)).fill("#ffffff00");
+		drawnPixels[x] = Array(parseInt(desiredPixelHeight)).fill(defaultColor);
 	// clear old displays
 	drawDrawingPanel();
 	drawDisplayPanel();
@@ -132,6 +131,10 @@ function drawDisplayPanel() {
 
 function clearPanel() {
 	initializeDrawnPixelArray();
+}
+
+function fillPanel() {
+	initializeDrawnPixelArray(getRgbaFormattedCurrentColor());
 }
 
 function getRgbaFormattedCurrentColor() {
