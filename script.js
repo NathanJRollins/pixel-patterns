@@ -1,17 +1,19 @@
 /*****************************************************
 Todo:
-	Color & opacity (sliders for now)
+	Fill all with current color
 	Drag to draw/erase
 	Download as preset size (detect browser's as one of them) or custom input size
 	Sharpen display - pattern should appear pixel-perfectly
 	URL to current pattern
 	Prettify UI
+	Basic tools (line, bucket, dropper, etc.)
 
 (Maybe)
 	Preset patterns
 	Save/load patterns
 	Undo/redo (eh)
 	Sell soul to documentation devil (+ readme.md)
+	Optimise primarily (pattern repeating part of code)
 
 *******************************************************/
 
@@ -43,7 +45,7 @@ function setDrawPanelDimensions(x, y) {
 function initializeDrawnPixelArray() {
 	drawnPixels = Array();
   for (var x = 0; x < desiredPixelWidth; x++)
-		drawnPixels[x] = Array(parseInt(desiredPixelHeight)).fill(0);
+		drawnPixels[x] = Array(parseInt(desiredPixelHeight)).fill("#ffffff00");
 	// clear old displays
 	drawDrawingPanel();
 	drawDisplayPanel();
@@ -67,8 +69,9 @@ document.getElementById("drawing-panel").addEventListener("click", function(e) {
 });
 
 function drawPixel(x, y) {
-	// Toggle pixel in data structure
-	drawnPixels[x][y] = (drawnPixels[x][y] == 1) ? 0 : 1;
+	// Draw pixel in data structure, or clear if already present here
+	var thisColor = getRgbaFormattedCurrentColor()
+	drawnPixels[x][y] = (drawnPixels[x][y] == thisColor ? "#ffffff00" : thisColor);
 	drawDrawingPanel();
 	drawDisplayPanel();
 }
@@ -83,12 +86,11 @@ function drawDrawingPanel() {
 	ctx.clearRect(0, 0, canvas.width, canvas.height);
 	// ctx.imageSmoothingEnabled = false;
 	ctx.lineWidth = 1;
-	ctx.fillStyle = "rgba(0,0,0,255)";
 
 	// Draw pixels
 	for (var y = 0; y < desiredPixelHeight; y++)
 		for (var x = 0; x < desiredPixelWidth; x++) {
-			if (drawnPixels[x][y] == 1)
+			ctx.fillStyle = drawnPixels[x][y];
 			ctx.fillRect(x*widthPerPixel, y*heightPerPixel, widthPerPixel, heightPerPixel);
 		}
 
@@ -122,15 +124,34 @@ function drawDisplayPanel() {
 
 	for ( var y = 0; y < displayHeight; y++ ) {
 		for ( var x = 0; x < displayWidth; x++ ) {
-			if ( (drawnPixels[x%desiredPixelWidth][y%desiredPixelHeight]  ) == 1) {
-				ctx.fillRect( x, y, 1, 1 );
-			}
+			ctx.fillStyle = drawnPixels[x%desiredPixelWidth][y%desiredPixelHeight];
+			ctx.fillRect( x, y, 1, 1 );
 		}
 	}
 }
 
 function clearPanel() {
 	initializeDrawnPixelArray();
+}
+
+function getRgbaFormattedCurrentColor() {
+	// split hex value from color input into an object with RGBA components
+	var chosenColor = document.getElementById("chosenColor").value.toString(16);
+	var splitColor = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(chosenColor);
+	var colorObject = {
+		r: parseInt(splitColor[1], 16),
+		g: parseInt(splitColor[2], 16),
+		b: parseInt(splitColor[3], 16),
+		a: document.getElementById("chosenAlpha").valueAsNumber
+	};
+	// Convert that object into the desired formatted string
+	var formattedString = `rgba(${colorObject.r},${colorObject.g},${colorObject.b},${colorObject.a})`;
+	return formattedString;
+}
+
+// Change color display's opacity, since the color chooser doesn't implement transparency by default
+function updateColorDisplayOpacity() {
+	document.getElementById("chosenColor").style.opacity = document.getElementById("chosenAlpha").valueAsNumber;
 }
 
 // Trigger once to initalize
