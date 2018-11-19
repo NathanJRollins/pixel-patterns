@@ -1,5 +1,7 @@
 /*****************************************************
 Todo:
+	Fix in Edge
+	Pattern display zoom slider (more easily visible patterns on more pixel-dense displays)
 	Drag to draw/erase
 	Download as preset size (detect browser's as one of them) or custom input size
 	Sharpen display - pattern should appear pixel-perfectly
@@ -8,16 +10,16 @@ Todo:
 	Basic tools (line, bucket, dropper, etc.)
 
 (Maybe)
-	Preset patterns
+	Preset/example patterns
 	Save/load patterns
 	Undo/redo (eh)
 	Sell soul to documentation devil (+ readme.md)
-	Optimise primarily (pattern repeating part of code)
+	Optimise (primarily pattern-repeating part of code)
 
 *******************************************************/
 
-var desiredPixelWidth;
-var desiredPixelHeight;
+var desiredNumOfColumns;
+var desiredNumOfRows;
 var drawnPixels;
 
 function drawPanelDimensionsChanged() {
@@ -28,23 +30,15 @@ function drawPanelDimensionsChanged() {
 }
 
 function setDrawPanelDimensions(x, y) {
-  desiredPixelWidth = x;
-	desiredPixelHeight = y;
-	
-	var canvas = document.getElementById("drawing-panel");
-	var boundingRect = document.getElementById("drawing-panel").getBoundingClientRect();
-	var calculatedPixelWidth = (boundingRect.right - boundingRect.left);
-	var calculatedPixelHeight = (boundingRect.bottom - boundingRect.top);
-	canvas.width = calculatedPixelWidth;
-	canvas.height = calculatedPixelHeight;
-
+  desiredNumOfColumns = x;
+	desiredNumOfRows = y;
   initializeDrawnPixelArray();
 }
 
-function initializeDrawnPixelArray(defaultColor = "#ffffff00") {
+function initializeDrawnPixelArray(defaultColor = "rgba(0,0,0,0)") {
 	drawnPixels = Array();
-  for (var x = 0; x < desiredPixelWidth; x++)
-		drawnPixels[x] = Array(parseInt(desiredPixelHeight)).fill(defaultColor);
+  for (var x = 0; x < desiredNumOfColumns; x++)
+		drawnPixels[x] = Array(parseInt(desiredNumOfRows)).fill(defaultColor);
 	// clear old displays
 	drawDrawingPanel();
 	drawDisplayPanel();
@@ -52,17 +46,17 @@ function initializeDrawnPixelArray(defaultColor = "#ffffff00") {
 
 // Register click listener on drawing panel
 document.getElementById("drawing-panel").addEventListener("click", function(e) {
-  // Get location clicked within drawing panel
   var boundingRect = document.getElementById("drawing-panel").getBoundingClientRect();
+  var canvasWidth = boundingRect.right - boundingRect.left;
+	var canvasHeight = boundingRect.bottom - boundingRect.top;
+	
+  // Get location clicked within drawing panel
   var clickedLoc = {
     x: e.clientX - boundingRect.left,
     y: e.clientY - boundingRect.top
-  };
-  var canvasWidth = boundingRect.right - boundingRect.left;
-  var canvasHeight = boundingRect.bottom - boundingRect.top;
-
-  var pixelScaledXLoc = Math.floor((desiredPixelWidth * clickedLoc.x) / canvasWidth);
-	var pixelScaledYLoc = Math.floor((desiredPixelHeight * clickedLoc.y) / canvasHeight);
+	};
+  var pixelScaledXLoc = Math.floor((desiredNumOfColumns * clickedLoc.x) / canvasWidth);
+	var pixelScaledYLoc = Math.floor((desiredNumOfRows * clickedLoc.y) / canvasHeight);
 	
   drawPixel(pixelScaledXLoc, pixelScaledYLoc);
 });
@@ -70,61 +64,69 @@ document.getElementById("drawing-panel").addEventListener("click", function(e) {
 function drawPixel(x, y) {
 	// Draw pixel in data structure, or clear if already present here
 	var thisColor = getRgbaFormattedCurrentColor()
-	drawnPixels[x][y] = (drawnPixels[x][y] == thisColor ? "#ffffff00" : thisColor);
+	drawnPixels[x][y] = (drawnPixels[x][y] == thisColor ? "rgba(0,0,0,0)" : thisColor);
 	drawDrawingPanel();
 	drawDisplayPanel();
 }
 
 function drawDrawingPanel() {
-	var boundingRect = document.getElementById("drawing-panel").getBoundingClientRect();
-	var widthPerPixel = (boundingRect.right - boundingRect.left)/desiredPixelWidth;
-	var heightPerPixel = (boundingRect.bottom - boundingRect.top)/desiredPixelHeight;
-	
 	var canvas = document.getElementById("drawing-panel");
-  var ctx = canvas.getContext("2d");
+	var boundingRect = canvas.getBoundingClientRect();
+	var displayWidth = boundingRect.right - boundingRect.left-2;
+	var displayHeight = boundingRect.bottom - boundingRect.top-2;
+	canvas.width = displayWidth;
+	canvas.height = displayHeight;
+	var cellWidth  = displayWidth / desiredNumOfColumns;
+	var cellHeight = displayHeight / desiredNumOfRows;
+
+	var ctx = canvas.getContext("2d");
 	ctx.clearRect(0, 0, canvas.width, canvas.height);
-	// ctx.imageSmoothingEnabled = false;
+	ctx.imageSmoothingEnabled = false;
+	ctx.translate(0.5,0.5); // for smoothing those lines to pixel perfection
 	ctx.lineWidth = 1;
 
 	// Draw pixels
-	for (var y = 0; y < desiredPixelHeight; y++)
-		for (var x = 0; x < desiredPixelWidth; x++) {
+	for (var y = 0; y < desiredNumOfRows; y++)
+		for (var x = 0; x < desiredNumOfColumns; x++) {
 			ctx.fillStyle = drawnPixels[x][y];
-			ctx.fillRect(x*widthPerPixel, y*heightPerPixel, widthPerPixel, heightPerPixel);
+			ctx.fillRect(x*cellWidth, y*cellHeight, cellWidth, cellHeight);
 		}
 
-	// Draw grid lines
-	ctx.strokeStyle = "#e0e0f844";
-	for (var y = 1; y < desiredPixelHeight; y++) {
+	// Draw gridlines
+	ctx.strokeStyle = "#80808044";
+	for (var y = 1; y < desiredNumOfRows; y++) {
+		// Draw horizontals
 		ctx.beginPath();
-		ctx.moveTo(0, y*heightPerPixel);
-		ctx.lineTo(desiredPixelWidth*widthPerPixel, y*heightPerPixel);
-		ctx.stroke(); 
-		for (var x = 1; x < desiredPixelWidth; x++) {
-			ctx.beginPath();
-			ctx.moveTo(x*widthPerPixel, 0);
-			ctx.lineTo(x*widthPerPixel, desiredPixelHeight*heightPerPixel);
-			ctx.stroke(); 
-		}
+		ctx.moveTo(0,            Math.round(y*cellHeight));
+		ctx.lineTo(displayWidth, Math.round(y*cellHeight));
+		ctx.stroke();
+	}
+	for (var x = 1; x < desiredNumOfColumns; x++) {
+		// Draw verticals
+		ctx.beginPath();
+		ctx.moveTo(Math.round(x*cellWidth), 0);
+		ctx.lineTo(Math.round(x*cellWidth), displayHeight);
+		ctx.stroke();
 	}
 }
 
-function drawDisplayPanel() {
+function drawDisplayPanel() {	
 	// XXX: Optimise this.
 	// It's per-pixel, but we can just repeat the pattern itself once it's in as imagedata
 	var canvas = document.getElementById("display-panel");
 	var ctx = canvas.getContext("2d");
 	ctx.clearRect(0, 0, canvas.width, canvas.height);
-	ctx.fillStyle = "rgba(0,0,0,255)";
 
 	var boundingRect = canvas.getBoundingClientRect();
-	var displayWidth = boundingRect.right - boundingRect.left;
-	var displayHeight = boundingRect.bottom - boundingRect.top;
+	var displayWidth = boundingRect.right - boundingRect.left - 2;
+	var displayHeight = boundingRect.bottom - boundingRect.top - 2;
+	canvas.width = displayWidth;
+	canvas.height = displayHeight;
 
 	for ( var y = 0; y < displayHeight; y++ ) {
 		for ( var x = 0; x < displayWidth; x++ ) {
-			ctx.fillStyle = drawnPixels[x%desiredPixelWidth][y%desiredPixelHeight];
-			ctx.fillRect( x, y, 1, 1 );
+			ctx.fillStyle = drawnPixels[x%desiredNumOfColumns][y%desiredNumOfRows];
+			ctx.fillRect(x, y, 1, 1);
 		}
 	}
 }
