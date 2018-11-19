@@ -1,6 +1,5 @@
 /*****************************************************
 Todo:
-	Clear canvas button
 	Color & opacity (sliders for now)
 	Drag to draw/erase
 	Download as preset size (detect browser's as one of them) or custom input size
@@ -12,7 +11,7 @@ Todo:
 	Preset patterns
 	Save/load patterns
 	Undo/redo (eh)
-	Sell soul to documentation devil
+	Sell soul to documentation devil (+ readme.md)
 
 *******************************************************/
 
@@ -128,6 +127,10 @@ function drawDisplayPanel() {
 			}
 		}
 	}
+}
+
+function clearPanel() {
+	initializeDrawnPixelArray();
 }
 
 // Trigger once to initalize
