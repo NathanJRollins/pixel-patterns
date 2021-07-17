@@ -1,5 +1,5 @@
 body {
-	background-color: grey;
+	background-color: black;
 }
 
 #pixel-pattern-div {
@@ -9,10 +9,22 @@ body {
 	padding: 10px;
 }
 
+/* Vertical y-cell-height control */
 /* #draw-range-height {
 	display: inline-block;
 	transform: rotate(-90deg);
 } */
+
+/* Center things */
+#pixel-pattern-div, #pixel-pattern-div div {
+	text-align: center;
+}
+/* Color-picker needs white BG for transparency effects to show selected color accurately. */
+#chosen-color-wrapper {
+	background-color: white;
+	display: inline-block;
+	border-radius: 6px;
+}
 
 canvas {
 	width: 29em;
@@ -30,9 +42,28 @@ canvas {
 }
 
 #drawing-panel {
-	background-color: azure;
+	background-color: white;
 }
 
 #display-panel {
-	background-color: beige;
+	background-color: white;
+}
+
+.unselectable {
+	-webkit-touch-callout: none;
+	-webkit-user-select: none;
+	-khtml-user-select: none;
+	-moz-user-select: none;
+	-ms-user-select: none;
+	user-select: none;
+}
+
+
+
+/* XXX: Temp styling SCRATCH */
+#pixel-pattern-div {
+	padding-top: 3vh;
+	padding-bottom: 5vh;
+	background-color: #686868;
+	color: white;
 }
