@@ -11,22 +11,26 @@ interface ShareModalProps {
  * mode, color, and alpha encoded into the hash) and a Copy button.
  * "Open in new tab" duplicates the URL so the user can preview the share
  * payload on first load.
+ *
+ * The URL is built synchronously in a `useState` lazy initializer so it's
+ * available the instant the modal mounts — no useEffect timing window
+ * during which the input/anchor's `href` would still be empty (and a fast
+ * Cmd-C or "Open in new tab" click could grab the empty URL).
  */
 export function ShareModal(props: ShareModalProps) {
   const urlRef = useRef<HTMLInputElement>(null);
-  const [url, setUrl] = useState("");
-
-  useEffect(() => {
+  const [url] = useState(() => {
     const u = store.buildShareUrl();
     const abs = new URL(window.location.href);
     abs.hash = u.slice(1); // omit the leading `#`
-    setUrl(abs.toString());
-  }, []);
+    return abs.toString();
+  });
 
   useEffect(() => {
-    // Focus + select the URL field for instant Cmd-C.
+    // Focus + select the URL field for instant Cmd-C, now that the value is
+    // already in place synchronously.
     urlRef.current?.select();
-  }, [url]);
+  }, []);
 
   function copy() {
     navigator.clipboard?.writeText(url).then(

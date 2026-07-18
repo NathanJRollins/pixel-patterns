@@ -64,11 +64,8 @@ export function DimensionsDock() {
         signal={store.showGridLines}
         onChange={(b) => store.setShowGridLines(b)}
       />
-      <ToggleRow
-        label="Mirror axis"
-        signal={store.showMirrorAxis}
-        onChange={(b) => store.setShowMirrorAxis(b)}
-      />
+      {/* Mirror-axis toggle moved up to the Toolbar, next to the mirror-mode
+          buttons — keeps all the mirror-related controls in one place. */}
     </div>
   );
 }

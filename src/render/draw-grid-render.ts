@@ -33,8 +33,11 @@ export interface GridRenderInput {
   mode: MirrorMode;
   colors: ThemeColors;
   hover: { x: number; y: number } | null;
-  /** Optional: dim cells not yet mirrored (used for stroke preview). Default false. */
+  /** Draw the mirror axis overlay (where the user grid's halves meet). */
   showMirrorAxis: boolean;
+  /** Draw the 1-device-px cell grid lines. When false, only the outer
+   * border around the drawable area is drawn. */
+  showGridLines: boolean;
 }
 
 interface Layout {
@@ -61,7 +64,7 @@ export function renderDrawGrid(
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, cssW, cssH);
 
-  const { pattern, colors, mode, hover, showMirrorAxis } = input;
+  const { pattern, colors, mode, hover, showMirrorAxis, showGridLines } = input;
   const layout = computeLayout(pattern.width, pattern.height, cssW, cssH);
   const { cellPx, offsetX, offsetY } = layout;
 
@@ -93,21 +96,24 @@ export function renderDrawGrid(
     }
   }
 
-  // 3. grid lines
+  // 3. grid lines — gated by UI toggle. When toggled off, we still draw the
+// outer border around the drawable area so the user can see where it is.
   ctx.strokeStyle = colors.gridLine;
   ctx.lineWidth = 1;
-  ctx.beginPath();
-  for (let x = 0; x <= pattern.width; x++) {
-    const px = Math.round(offsetX + x * cellPx) + 0.5;
-    ctx.moveTo(px, offsetY);
-    ctx.lineTo(px, offsetY + pattern.height * cellPx);
+  if (showGridLines) {
+    ctx.beginPath();
+    for (let x = 0; x <= pattern.width; x++) {
+      const px = Math.round(offsetX + x * cellPx) + 0.5;
+      ctx.moveTo(px, offsetY);
+      ctx.lineTo(px, offsetY + pattern.height * cellPx);
+    }
+    for (let y = 0; y <= pattern.height; y++) {
+      const py = Math.round(offsetY + y * cellPx) + 0.5;
+      ctx.moveTo(offsetX, py);
+      ctx.lineTo(offsetX + pattern.width * cellPx, py);
+    }
+    ctx.stroke();
   }
-  for (let y = 0; y <= pattern.height; y++) {
-    const py = Math.round(offsetY + y * cellPx) + 0.5;
-    ctx.moveTo(offsetX, py);
-    ctx.lineTo(offsetX + pattern.width * cellPx, py);
-  }
-  ctx.stroke();
 
   // 4. mirror axis — only where the user grid's halves join (not at the
   // outermost edges). For "H" it's the horizontal line at row H/2; for "V"

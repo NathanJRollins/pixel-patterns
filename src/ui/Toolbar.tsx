@@ -75,6 +75,17 @@ export function Toolbar() {
             {m === "none" ? "None" : m}
           </button>
         ))}
+        {/* Mirror-axis overlay toggle lives next to the mode buttons so everything
+            mirror-related is in one place. (Earlier it was buried deep in the
+            DimensionsDock with the dimension sliders.) */}
+        <button
+          class="btn"
+          aria-pressed={store.showMirrorAxis.value}
+          title={`Toggle mirror-axis overlay`}
+          onClick={() => store.setShowMirrorAxis(!store.showMirrorAxis.value)}
+        >
+          Axis
+        </button>
       </div>
       <div class="tool-group">
         <button

@@ -31,8 +31,9 @@ export function App() {
 
   useEffect(() => {
     // Page background: tiles the super-tile across `<body>`. Live update on
-    // every rev / mode / bg-scale change.
-    effect(() => {
+    // every rev / mode / bg-scale change. The render layer's own rAF
+    // coalescing handles paint-frequency throttling.
+    const disposeBg = effect(() => {
       const _rev = store.rev.value;
       const _mode = store.mirrorMode.value;
       const _showBg = store.showPageBg.value;
@@ -49,23 +50,20 @@ export function App() {
       }
     });
 
-    // Favicon: deferred with rAF so we don't pay the toDataURL cost on every
-    // single pointermove — only at the next animation frame after a rev bump.
-    let rafId = 0;
-    effect(() => {
+    // Favicon: rAF-coalesced inside `updateFavicon` itself; just call it on
+    // every relevant signal change.
+    const disposeFav = effect(() => {
       const _rev = store.rev.value;
       const _mode = store.mirrorMode.value;
       void [_rev, _mode];
-      if (rafId) cancelAnimationFrame(rafId);
-      rafId = requestAnimationFrame(() => {
-        rafId = 0;
-        updateFavicon(store.pattern.value, store.mirrorMode.value);
-      });
+      updateFavicon(store.pattern.value, store.mirrorMode.value);
     });
 
     // Theme: set body attribute; invalidate cached canvases so colour
     // blending recomputes against the new checkerboard.
-    effect(() => {
+    const disposeTheme = effect(() => {
+      const _t = store.theme.value;
+      void _t;
       document.body.dataset["theme"] = store.theme.value;
       invalidateSuperTileCache();
     });
@@ -73,10 +71,11 @@ export function App() {
     // Keyboard shortcuts.
     const detach = attachKeyboard(showShare, showExport, showSettings);
 
-    // Resize handler: nothing yet — canvas DPR handling re-reads on demand.
     return () => {
       detach();
-      if (rafId) cancelAnimationFrame(rafId);
+      disposeBg();
+      disposeFav();
+      disposeTheme();
     };
   }, []);
 

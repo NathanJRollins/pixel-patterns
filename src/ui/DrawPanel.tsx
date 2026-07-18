@@ -44,6 +44,7 @@ export function DrawPanel() {
         colors,
         hover: store.hover.value,
         showMirrorAxis: store.showMirrorAxis.value,
+        showGridLines: store.showGridLines.value,
       });
     });
     return () => dispose();
@@ -65,6 +66,7 @@ export function DrawPanel() {
           colors: colorsForTheme(store.theme.value),
           hover: store.hover.value,
           showMirrorAxis: store.showMirrorAxis.value,
+          showGridLines: store.showGridLines.value,
         });
       }
     });
@@ -87,6 +89,7 @@ export function DrawPanel() {
         colors: colorsForTheme(store.theme.value),
         hover: store.hover.value,
         showMirrorAxis: store.showMirrorAxis.value,
+        showGridLines: store.showGridLines.value,
       });
     });
     ro.observe(canvas);

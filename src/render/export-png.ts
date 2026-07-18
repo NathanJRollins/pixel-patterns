@@ -2,22 +2,33 @@ import type { MirrorMode, Pattern } from "../domain/types.js";
 import { superTileCanvas } from "./super-tile-canvas.js";
 
 /**
- * Render the current pattern to a full-image canvas at a chosen target size
- * (in CSS px) and return a PNG `Blob`. Tiling uses `createPattern` + a
- * single `fillRect`, same as the preview, so even large exports are one
- * GPU blit after the super-tile is built.
+ * Render the current pattern to a full-image canvas and return a PNG `Blob`.
+ * Tiling uses `createPattern` + a single `fillRect`, same as the preview,
+ * so even large exports are one GPU blit after the super-tile is built.
+ *
+ * Output modes:
+ *   - **Single tile** (default): no `outWidth`/`outHeight` provided. The
+ *     output canvas is exactly the super-tile dimensions × `cellScale`. The
+ *     user's OS can then tile it as a wallpaper without us baking in
+ *     repeats.
+ *   - **Tile to size**: `outWidth`/`outHeight` provided. The output canvas
+ *     is sized to them; the super-tile repeats via `createPattern('repeat')`
+ *     to fill the whole canvas. This is the "one-image desktop wallpaper"
+ *     export.
  *
  * `cellScale` controls how big one super-tile cell is in the output image;
- * e.g. `cellScale = 16` means each ·pattern cell becomes a 16-pixel block.
- * Output dimensions are computed as `superW * cellScale × superH * cellScale`,
- * rounded to the nearest 8 px so the result crops cleanly on the tile grid.
+ *   `cellScale = 16` means each pattern cell becomes a 16-pixel block.
  *
  * `interpolate` flips on bilinear smoothing — for users who want the soft
- * look on a wireframe pattern. Default off (pixel-perfect is the spec).
+ * look. Default off (pixel-perfect is the spec).
  */
 export interface ExportOptions {
   cellScale: number;
   interpolate: boolean;
+  /** If provided, tile to this width. If omitted, output is one super-tile. */
+  outWidth?: number;
+  /** If provided, tile to this height. If omitted, output is one super-tile. */
+  outHeight?: number;
 }
 
 export interface ExportResult {
@@ -33,8 +44,8 @@ export async function exportPatternPng(
 ): Promise<ExportResult> {
   const cellScale = Math.max(1, Math.round(opts.cellScale));
   const tile = superTileCanvas(pattern, mode, cellScale);
-  const outW = tile.width;
-  const outH = tile.height;
+  const outW = Math.max(1, Math.round(opts.outWidth ?? tile.width));
+  const outH = Math.max(1, Math.round(opts.outHeight ?? tile.height));
   const out = document.createElement("canvas");
   out.width = outW;
   out.height = outH;

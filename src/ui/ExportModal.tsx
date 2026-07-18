@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "preact/hooks";
+import { useState } from "preact/hooks";
 import { store } from "../state/store.js";
 import { superTileDimensions } from "../domain/mirror.js";
 import { downloadBlob, exportPatternPng } from "../render/export-png.js";
@@ -10,23 +10,80 @@ interface ExportModalProps {
 
 const PRESET_CELL_SCALES: number[] = [2, 4, 8, 16, 24, 32, 48, 64];
 
+/**
+ * Output mode.
+ *
+ * - `single`: the super-tile *once*, scaled by `cellScale`. This is what
+ *   OS-level wallpaper tiling expects when the user wants the OS to repeat
+ *   the pattern themselves (Windows desktop backgrounds, macOS desktop
+ *   pattern mode, etc.). The output canvas is exactly the super-tile's
+ *   dimensions × cellScale.
+ * - `tile`: the super-tile repeats to fill a chosen output canvas (e.g.
+ *   1920×1080 for a fullscreen wallpaper that already has the tiling baked
+ *   in). The output dimensions are the chosen preset / custom pair; the
+ *   pattern tiles across them via `createPattern('repeat')`.
+ */
+type Mode = "single" | "tile";
+
+interface SizePreset {
+  id: string;
+  label: string;
+  w: number;
+  h: number;
+}
+
+const TILE_PRESETS: SizePreset[] = [
+  { id: "fhd", label: "1920 × 1080 (FHD)", w: 1920, h: 1080 },
+  { id: "qhd", label: "2560 × 1440 (QHD)", w: 2560, h: 1440 },
+  { id: "uhd", label: "3840 × 2160 (4K)", w: 3840, h: 2160 },
+  { id: "square", label: "1024 × 1024 (square)", w: 1024, h: 1024 },
+  // "Screen" preset is computed in render; id reserved here so the buttons
+  // array order stays predictable.
+];
+
+function detectScreenPreset(): SizePreset {
+  const sw = Math.max(1, Math.round(window.screen.width * (window.devicePixelRatio || 1)));
+  const sh = Math.max(1, Math.round(window.screen.height * (window.devicePixelRatio || 1)));
+  return { id: "screen", label: `Screen (${sw} × ${sh})`, w: sw, h: sh };
+}
+
 /** Export the tiled pattern as a PNG at a chosen cell scale. */
 export function ExportModal(props: ExportModalProps) {
-  const [cellScale, setCellScale] = useState(8);
+  // Default the cell scale to whatever the preview is using — most users
+  // expect "what I see is what I get" out of the box.
+  const [cellScale, setCellScale] = useState(store.previewCellScale.value);
   const [interpolate, setInterpolate] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [mode, setMode] = useState<Mode>("single");
+  const [chosenPresetId, setChosenPresetId] = useState<string>("square");
+  const [customW, setCustomW] = useState(1920);
+  const [customH, setCustomH] = useState(1080);
+  const [useCustom, setUseCustom] = useState(false);
+
   const dims = superTileDimensions(
     store.pattern.value.width,
     store.pattern.value.height,
     store.mirrorMode.value,
   );
-  const outW = dims.w * cellScale;
-  const outH = dims.h * cellScale;
-  const sizeLabel = useRef<HTMLSpanElement>(null);
 
-  useEffect(() => {
-    sizeLabel.current?.replaceChildren(document.createTextNode(`${outW} × ${outH} px`));
-  }, [outW, outH]);
+  const screenPreset = detectScreenPreset();
+
+  // Effective output dims per mode.
+  let outW: number, outH: number;
+  if (mode === "single") {
+    outW = dims.w * cellScale;
+    outH = dims.h * cellScale;
+  } else if (useCustom) {
+    outW = customW;
+    outH = customH;
+  } else {
+    const preset =
+      chosenPresetId === "screen"
+        ? screenPreset
+        : TILE_PRESETS.find((p) => p.id === chosenPresetId) ?? TILE_PRESETS[0];
+    outW = preset.w;
+    outH = preset.h;
+  }
 
   async function onDownload() {
     setBusy(true);
@@ -34,9 +91,15 @@ export function ExportModal(props: ExportModalProps) {
       const { blob } = await exportPatternPng(store.pattern.value, store.mirrorMode.value, {
         cellScale,
         interpolate,
+        // For `single` mode, undefined → export fn uses tile.width/height
+        // (i.e. one super-tile, scaled). For `tile` mode, pass outW/outH.
+        outWidth: mode === "single" ? undefined : outW,
+        outHeight: mode === "single" ? undefined : outH,
       });
       const ts = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-      downloadBlob(blob, `pixel-pattern-${ts}-${dims.w}x${dims.h}@${cellScale}.png`);
+      const dimsTag =
+        mode === "single" ? `${dims.w}x${dims.h}@${cellScale}` : `${outW}x${outH}@${cellScale}tiled`;
+      downloadBlob(blob, `pixel-pattern-${ts}-${dimsTag}.png`);
       saveToast("PNG exported");
       props.onClose();
     } catch (e) {
@@ -55,37 +118,127 @@ export function ExportModal(props: ExportModalProps) {
           <button class="btn btn-ghost btn-icon" onClick={props.onClose} title="Close">×</button>
         </div>
         <p style={{ color: "var(--text-2)", fontSize: 13, margin: 0 }}>
-          The seamless super-tile ({dims.w} × {dims.h}) tiled to a square PNG.
+          The seamless super-tile is {dims.w} × {dims.h} cells.
           One cell = <strong>{cellScale}px</strong> in the output.
         </p>
-        <div class="chip-row">
-          {PRESET_CELL_SCALES.map((n) => (
+
+        <div class="field">
+          <label>Output mode</label>
+          <div class="toolbar">
             <button
-              key={n}
-              class={"chip" + (cellScale === n ? " is-active" : "")}
-              onClick={() => setCellScale(n)}
+              class="btn"
+              aria-pressed={mode === "single"}
+              onClick={() => setMode("single")}
+              title="Single super-tile — for OS-level wallpaper tiling"
             >
-              {n}px
+              Single tile
             </button>
-          ))}
+            <button
+              class="btn"
+              aria-pressed={mode === "tile"}
+              onClick={() => setMode("tile")}
+              title="Pattern repeats to fill the output size — for one-image wallpapers"
+            >
+              Tile to size
+            </button>
+          </div>
         </div>
-        <div class="row">
+
+        {mode === "tile" && (
+          <>
+            <div class="field">
+              <label>Output size</label>
+              <div class="chip-row">
+                {TILE_PRESETS.map((p) => (
+                  <button
+                    key={p.id}
+                    class={"chip" + (chosenPresetId === p.id && !useCustom ? " is-active" : "")}
+                    onClick={() => {
+                      setChosenPresetId(p.id);
+                      setUseCustom(false);
+                    }}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+                <button
+                  class={"chip" + (chosenPresetId === "screen" && !useCustom ? " is-active" : "")}
+                  onClick={() => {
+                    setChosenPresetId("screen");
+                    setUseCustom(false);
+                  }}
+                  title="Match this screen's full resolution"
+                >
+                  {screenPreset.label}
+                </button>
+                <button
+                  class={"chip" + (useCustom ? " is-active" : "")}
+                  onClick={() => setUseCustom(true)}
+                  title="Specify a custom pixel size"
+                >
+                  Custom
+                </button>
+              </div>
+            </div>
+            {useCustom && (
+              <div class="row">
+                <label>Width</label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={String(customW)}
+                  onInput={(e) => {
+                    const n = parseInt((e.currentTarget as HTMLInputElement).value, 10);
+                    if (Number.isFinite(n) && n > 0) setCustomW(n);
+                  }}
+                  style={{ flex: 1 }}
+                />
+                <label>Height</label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={String(customH)}
+                  onInput={(e) => {
+                    const n = parseInt((e.currentTarget as HTMLInputElement).value, 10);
+                    if (Number.isFinite(n) && n > 0) setCustomH(n);
+                  }}
+                  style={{ flex: 1 }}
+                />
+              </div>
+            )}
+          </>
+        )}
+
+        <div class="field">
           <label>Cell size</label>
-          <input
-            type="range"
-            min={1}
-            max={64}
-            step={1}
-            value={cellScale}
-            onInput={(e) => setCellScale(parseInt((e.currentTarget as HTMLInputElement).value, 10))}
-          />
-          <span class="value">{cellScale}</span>
+          <div class="chip-row">
+            {PRESET_CELL_SCALES.map((n) => (
+              <button
+                key={n}
+                class={"chip" + (cellScale === n ? " is-active" : "")}
+                onClick={() => setCellScale(n)}
+              >
+                {n}px
+              </button>
+            ))}
+          </div>
+          <div class="row">
+            <input
+              type="range"
+              min={1}
+              max={64}
+              step={1}
+              value={cellScale}
+              onInput={(e) => setCellScale(parseInt((e.currentTarget as HTMLInputElement).value, 10))}
+            />
+            <span class="value">{cellScale}px</span>
+          </div>
         </div>
-        <div>
-          <span ref={sizeLabel} style={{ fontSize: 12, color: "var(--text-3)" }}>
-            {outW} × {outH} px
-          </span>
+
+        <div style={{ fontSize: 12, color: "var(--text-3)" }}>
+          Output: {outW} × {outH} px
         </div>
+
         <label class="checkbox">
           <input
             type="checkbox"

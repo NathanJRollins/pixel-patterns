@@ -105,7 +105,20 @@ class Store {
   // ---------------------------------------------------------------------------
 
   setHex(hex: string): void {
+    // Update only the color signal — does NOT bump the recents panel.
+    // Recents should reflect *committed* color picks; an HTML5 color picker
+    // drags one colour per pixel, so pushing every `input` event wipes the
+    // history in a heartbeat. Callers that want to commit a recent push
+    // (HTML picker `change`, dropper sample, recent-swatch click) use
+    // {@link commitRecent} explicitly.
     this.color.value = hexToCell(hex, this.alpha01.value);
+  }
+
+  /** Push the currently-selected color to the recents panel.
+   * De-dups by RGB only — the alpha channel is governed globally by
+   * `alpha01`, so picking the same hue at two different alphas stays one
+   * recent entry (the swatch re-renders at the current alpha). */
+  commitRecent(): void {
     this.bumpRecent();
   }
 
@@ -115,23 +128,48 @@ class Store {
     this.color.value = packRGBA(r, g, b, Math.round(a * 255));
   }
 
+  /**
+   * Pick the colour of a cell onto the active brush. Used by the dropper
+   * tool — copies both RGB and alpha from the sampled cell. Sampling a
+   * transparent cell is a no-op (the brush is left untouched), so an
+   * accidental dropper over empty space doesn't yank the picker to the
+   * default magenta.
+   */
   pickColor(cell: Cell): void {
-    if (cell === 0) {
-      this.color.value = makeDefaultColor();
-      this.alpha01.value = 1;
-    } else {
-      this.color.value = cell;
-      this.alpha01.value = cellAlpha01(cell);
-    }
+    if (cell === 0) return;
+    this.color.value = cell;
+    this.alpha01.value = cellAlpha01(cell);
     this.bumpRecent();
+  }
+
+  /**
+   * Pick only the RGB of a stored recent/palette swatch, keeping the
+   * user's currently-selected alpha. Letting the alpha slider stay global
+   * to the brush means the recents panel always reads at "current alpha",
+   * which is what the redesign's UX model is.
+   */
+  pickColorRgbOnly(cell: Cell): void {
+    if (cell === 0) return;
+    const [r, g, b] = unpackRGBA(cell);
+    this.color.value = packRGBA(r, g, b, Math.round(this.alpha01.value * 255));
+    // Don't bumpRecent — clicking a recent swatch shouldn't move it to the
+    // top of the recents panel. (The stored Cell is already there.)
   }
 
   private bumpRecent(): void {
     const c = this.color.value;
     if (c === 0) return;
+    const rgb = (c >>> 8) & 0xffffff; // alpha-agnostic key
     const list = this.recentCells.value.slice();
-    const idx = list.findIndex((x) => x === c);
-    if (idx === 0) return;
+    // Dedup by RGB only — older entries of the same hue at any alpha drop.
+    const idx = list.findIndex((x) => ((x >>> 8) & 0xffffff) === rgb);
+    if (idx === 0) {
+      // Already at the top, but its alpha may be stale — refresh in place so
+      // the displayed value matches the current alpha01.
+      if (list[0] !== c) list[0] = c;
+      this.recentCells.value = list;
+      return;
+    }
     if (idx > 0) list.splice(idx, 1);
     list.unshift(c);
     if (list.length > DEFAULT_RECENT_MAX) list.length = DEFAULT_RECENT_MAX;
