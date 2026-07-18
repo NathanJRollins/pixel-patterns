@@ -36,15 +36,50 @@ describe("v2 polish regressions", () => {
     expect(store.alpha01.value).toBeCloseTo(0x80 / 255, 4);
   });
 
-  it("pickColorRgbOnly keeps the currently-selected alpha when picking a swatch", () => {
+  it("pickSwatch keeps the currently-selected alpha when picking a swatch", () => {
     boot();
     store.setAlpha01(0.25);
     const swatch = packRGBA(0xff, 0x88, 0x44, 0xff); // swatch's stored alpha is opaque
-    store.pickColorRgbOnly(swatch);
+    store.pickSwatch(swatch);
     // RGB matches swatch. Alpha comes from current alpha01, not the swatch.
     const [r, g, b, a] = unpackRGBA(store.color.value);
     expect([r, g, b]).toEqual([0xff, 0x88, 0x44]);
     expect(a).toBe(Math.round(0.25 * 255));
+  });
+
+  it("pickSwatch re-orders the swatch to the top of the recents panel (conventional UX)", () => {
+    boot();
+    // Stage two recents: red, then green. Recents reads top-down so green
+    // should be at index 0.
+    store.setHex("#ff0000");
+    store.commitRecent();
+    store.setHex("#00ff00");
+    store.commitRecent();
+    expect(store.recentCells.value[0]).toBe(packRGBA(0x00, 0xff, 0x00, 0xff));
+    expect(store.recentCells.value[1]).toBe(packRGBA(0xff, 0x00, 0x00, 0xff));
+    // Click the older entry (red) — it should re-order to the top.
+    store.pickSwatch(store.recentCells.value[1]);
+    expect(store.recentCells.value[0]).toBe(
+      packRGBA(0xff, 0x00, 0x00, Math.round(1 * 255)),
+    );
+    expect(store.recentCells.value[1]).toBe(
+      packRGBA(0x00, 0xff, 0x00, Math.round(1 * 255)),
+    );
+  });
+
+  it("saveSlot ignores empty / whitespace-only names at the store layer", () => {
+    boot();
+    store.fillPattern();
+    store.saveSlot("");
+    store.saveSlot("   ");
+    store.saveSlot("\t");
+    expect(store.slots.value.length).toBe(0);
+    store.saveSlot("real");
+    expect(store.slots.value.length).toBe(1);
+    // Saving a whitespace-only name shouldn't sneak past — and "real" +
+    // whitespace should dedup to "real" rather than creating a second.
+    store.saveSlot("real  ");
+    expect(store.slots.value.length).toBe(1);
   });
 
   it("bumpRecent dedups by RGB only — picking the same hue at different alpha updates the entry in place", () => {

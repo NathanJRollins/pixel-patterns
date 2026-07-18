@@ -12,6 +12,7 @@ export function attachKeyboard(
   showShare: Signal<boolean>,
   showExport: Signal<boolean>,
   showSettings: Signal<boolean>,
+  showCheatsheet: Signal<boolean>,
 ): () => void {
   const onKey = (e: KeyboardEvent) => {
     const target = e.target as HTMLElement | null;
@@ -43,6 +44,14 @@ export function attachKeyboard(
       showShare.value = false;
       showExport.value = false;
       showSettings.value = false;
+      showCheatsheet.value = false;
+      return;
+    }
+    // `?` (Shift+/) opens cheatsheet. Match either shifted key — some Linux
+    // layouts produce the literal "?" at e.key without shift; handle both.
+    if (e.key === "?" || (e.shiftKey && e.key === "/")) {
+      e.preventDefault();
+      showCheatsheet.value = !showCheatsheet.value;
       return;
     }
     switch (e.key.toLowerCase()) {

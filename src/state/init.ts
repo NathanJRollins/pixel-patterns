@@ -8,8 +8,9 @@ import { loadAutosave, scheduleAutosave } from "./persistence.js";
  *   1. If `location.hash` carries a share payload, decode + apply; that
  *      takes precedence over autosave (sharing a URL should always win).
  *   2. Otherwise try to restore from localStorage autosave.
- *   3. Otherwise fall back to the baked-in defaults (which is what the
- *      store already initialised to).
+ *   3. Otherwise fall back to the baked-in defaults. As part of that
+ *      fallback, we honour the OS `prefers-color-scheme` so a brand-new
+ *      user with a light-theme OS preference doesn't get a dark app.
  *
  * After the initial load we wire up an autosave effect that fires on every
  * `rev` bump (which is every pattern mutation), debounced 250 ms by
@@ -27,7 +28,14 @@ export function boot(): void {
   }
   if (!didLoad) {
     const saved = loadAutosave();
-    if (saved) store.restore(saved);
+    if (saved) {
+      store.restore(saved);
+    } else {
+      // First-visit (or wiped localStorage) user → honour the OS theme
+      // preference as the default instead of forcing dark.
+      const prefers = prefersLightScheme() ? "light" : "dark";
+      store.setTheme(prefers);
+    }
   }
 
   // Apply current theme to the body so the first paint is correct.
@@ -59,4 +67,13 @@ export function boot(): void {
       scheduleAutosave(() => store.snapshot());
     }
   });
+}
+
+function prefersLightScheme(): boolean {
+  if (typeof window === "undefined" || !window.matchMedia) return false;
+  try {
+    return window.matchMedia("(prefers-color-scheme: light)").matches;
+  } catch {
+    return false;
+  }
 }

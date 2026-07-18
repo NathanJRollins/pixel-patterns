@@ -27,9 +27,11 @@ Whatever you paint in the input grid is composed into a four-way mirror-symmetri
 - **Theming**: light + dark via `body[data-theme]`. Respects `prefers-color-scheme`.
 - **Crisp rendering**: `image-rendering: pixelated`, `imageSmoothingEnabled = false`, device-pixel-ratio-scaled canvas backing stores.
 - **Pixel-perfect PNG export** (or optional bilinear smoothing) at any cell scale.
-- **Touch + accessibility**: pointer events; all tools reachable via keyboard; ARIA labels on tool buttons; `prefers-reduced-motion` honored.
+- **Touch + accessibility**: pointer events; all tools reachable via keyboard; ARIA labels on tool buttons; `prefers-reduced-motion` honored. Long-press on the canvas → temporary dropper for the rest of the gesture; two-finger pinch → adjust preview cell scale.
 - **Two-tap Clear** (and "Clear all local data" in settings) instead of "are you sure?" modals — keep your rhythm.
 - **Odd/even badges** on dimension sliders: odd values allow tighter mirror symmetry around a center axis.
+- **Cheatsheet modal**: `?` opens a single place that lists every keyboard shortcut + touch gesture.
+- **Export modal**: choose Single tile (one super-tile output you let the OS wallpaper-repeat) or Tile to size (presets FHD/QHD/4K/square/screen plus custom W×H, with the tiling baked in). Cell-scale defaults to the preview's so "what you see is what you get."
 
 ## Stack
 
@@ -48,9 +50,10 @@ src/
   render/     offscreen canvas building; preview panel via createPattern; draw grid; favicon; page-bg; PNG export
   state/      signals store; localStorage persistence; share-URL codec; boot
   ui/         Preact components: App, Toolbar, DrawPanel, PreviewPanel, ColorDock, DimensionsDock,
-              PresetsBar, SaveSlots, ShareModal, ExportModal, SettingsDrawer; keyboard map + toasts
+              PresetsBar, SaveSlots, ShareModal, ExportModal, SettingsDrawer, CheatsheetModal,
+              keyboard map + toasts
   styles/     tokens.css, app.css, components.css
-tests/        vitest: pure-domain unit tests + happy-dom App+boot smoke
+tests/        vitest: pure-domain unit tests + happy-dom smoke
 SPEC.md       the design contract (read this!)
 ```
 
@@ -62,7 +65,7 @@ npm run dev          # http://localhost:5173/pixel-patterns/
 npm run typecheck
 npm run build        # → dist/
 npm run preview      # serves dist/ at /pixel-patterns/
-npm test             # vitest run (pure domain + happy-dom smoke, 70 assertions)
+npm test             # vitest run (pure domain + happy-dom smoke, 84 assertions)
 ```
 
 ## Deploy

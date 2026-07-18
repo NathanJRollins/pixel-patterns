@@ -143,17 +143,19 @@ class Store {
   }
 
   /**
-   * Pick only the RGB of a stored recent/palette swatch, keeping the
-   * user's currently-selected alpha. Letting the alpha slider stay global
-   * to the brush means the recents panel always reads at "current alpha",
-   * which is what the redesign's UX model is.
+   * Pick a recent / palette swatch onto the brush. The alpha slider stays
+   * global — only the swatch's RGB is bound onto the brush — so the recents
+   * panel always reads at the current alpha (the "ideal way to operate"
+   * the operator pointed out). Clicking a recent swatch also re-orders it
+   * to the top of the recents list, since "click something you just
+   * grabbed" is the conventional swatch-palette UX (Photoshop, GIMP,
+   * macOS ColorSync).
    */
-  pickColorRgbOnly(cell: Cell): void {
+  pickSwatch(cell: Cell): void {
     if (cell === 0) return;
     const [r, g, b] = unpackRGBA(cell);
     this.color.value = packRGBA(r, g, b, Math.round(this.alpha01.value * 255));
-    // Don't bumpRecent — clicking a recent swatch shouldn't move it to the
-    // top of the recents panel. (The stored Cell is already there.)
+    this.bumpRecent();
   }
 
   private bumpRecent(): void {
@@ -356,15 +358,20 @@ class Store {
   // ---------------------------------------------------------------------------
 
   saveSlot(name: string): void {
+    const trimmed = name.trim();
+    // Guard at the store layer so a flaw in any UI validation (or a
+    // programmatic caller) can't persist an empty-named slot that would be
+    // indistinguishable from a typo / browser autofill misfire.
+    if (!trimmed) return;
     const list = this.slots.value.slice();
     const preset: SlotSerialized = {
-      name,
+      name: trimmed,
       createdAt: Date.now(),
       thumb: thumbFromPattern(this.pattern.value, this.mirrorMode.value),
       pattern: encodePattern(this.pattern.value),
       mirrorMode: this.mirrorMode.value,
     };
-    const idx = list.findIndex((s) => s.name === name);
+    const idx = list.findIndex((s) => s.name === trimmed);
     if (idx >= 0) list[idx] = preset;
     else list.unshift(preset);
     this.slots.value = list;

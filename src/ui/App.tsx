@@ -17,6 +17,7 @@ import { SaveSlots } from "./SaveSlots.js";
 import { ShareModal } from "./ShareModal.js";
 import { ExportModal } from "./ExportModal.js";
 import { SettingsDrawer } from "./SettingsDrawer.js";
+import { CheatsheetModal } from "./CheatsheetModal.js";
 
 /**
  * Top-level app shell. Wires UI panels to the central {@link store} and
@@ -27,6 +28,7 @@ export function App() {
   const showShare = useSignal(false);
   const showExport = useSignal(false);
   const showSettings = useSignal(false);
+  const showCheatsheet = useSignal(false);
   const showHint = useSignal(!store.hasShareUrl());
 
   useEffect(() => {
@@ -69,7 +71,7 @@ export function App() {
     });
 
     // Keyboard shortcuts.
-    const detach = attachKeyboard(showShare, showExport, showSettings);
+    const detach = attachKeyboard(showShare, showExport, showSettings, showCheatsheet);
 
     return () => {
       detach();
@@ -125,6 +127,14 @@ export function App() {
           >
             ⚙
           </button>
+          <button
+            class="btn btn-icon"
+            onClick={() => (showCheatsheet.value = true)}
+            aria-label="Keyboard shortcuts"
+            title="Keyboard shortcuts  (?)"
+          >
+            ?
+          </button>
           <a
             class="btn btn-icon"
             href="https://github.com/NathanJRollins/pixel-patterns"
@@ -166,6 +176,9 @@ export function App() {
       {showExport.value && <ExportModal onClose={() => (showExport.value = false)} />}
       {showSettings.value && (
         <SettingsDrawer onClose={() => (showSettings.value = false)} />
+      )}
+      {showCheatsheet.value && (
+        <CheatsheetModal onClose={() => (showCheatsheet.value = false)} />
       )}
       <ToastHost />
     </div>

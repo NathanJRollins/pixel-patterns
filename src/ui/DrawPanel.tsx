@@ -7,6 +7,63 @@ import {
   type ThemeColors,
 } from "../render/draw-grid-render.js";
 import { invalidateSuperTileCache } from "../render/super-tile-canvas.js";
+import type { Tool } from "../domain/types.js";
+
+// Long-press: hold a single-touch pointer still on the canvas for this many
+// milliseconds and the gesture temporarily switches to the dropper tool,
+// sampling under the cursor until release.
+const LONG_PRESS_MS = 450;
+// Slack within which the long-press timer stays armed — small finger
+// jitter on a touchscreen shouldn't cancel the gesture.
+const LONG_PRESS_SLACK_PX = 10;
+// Bounds for the pinch gesture. Same range as the cell-size slider in
+// DimensionsDock and the cell-scale field on the store.
+const PINCH_MIN_SCALE = 1;
+const PINCH_MAX_SCALE = 32;
+
+/**
+ * Module-level pointer footprint. Browsers don't expose a "currently-down
+ * pointers" API at the canvas level, so we keep a small map keyed by
+ * `pointerId` (a stable per-gesture id) populated from `PointerEvent`s on
+ * this canvas. Used only by `activeTouchPointers` and
+ * `currentPinchDistance` — both pinch helpers.
+ *
+ * Couldn't live in a `useRef` because the second pointer's `pointerdown`
+ * handler runs *before* the first pointer's `pointermove` was supposed to
+ * update it, and refs holding maps were getting clobbered by per-render
+ * closures. A module map is simpler.
+ */
+const activePointers = new Map<number, { x: number; y: number; type: string }>();
+
+function trackPointer(e: PointerEvent): void {
+  activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY, type: e.pointerType });
+}
+function untrackPointer(e: PointerEvent): void {
+  activePointers.delete(e.pointerId);
+}
+function updatePointer(e: PointerEvent): void {
+  const existing = activePointers.get(e.pointerId);
+  if (existing) {
+    existing.x = e.clientX;
+    existing.y = e.clientY;
+  } else {
+    trackPointer(e);
+  }
+}
+function activeTouchPointers(): number {
+  let n = 0;
+  for (const p of activePointers.values()) if (p.type === "touch") n++;
+  return n;
+}
+function currentPinchDistance(): number | null {
+  const pts: Array<{ x: number; y: number }> = [];
+  for (const p of activePointers.values()) {
+    if (p.type === "touch") pts.push({ x: p.x, y: p.y });
+    if (pts.length === 2) break;
+  }
+  if (pts.length !== 2) return null;
+  return Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+}
 
 /**
  * Input draw grid. Pointer events are routed through the store; cell math
@@ -25,6 +82,18 @@ export function DrawPanel() {
   // we can revert + redraw on every pointermove as the user drags.
   const lineAnchorRef = useRef<{ x: number; y: number } | null>(null);
   const lineSnapshotRef = useRef<Uint32Array | null>(null);
+
+  // Long-press dropper: while a single touch pointer is held still for
+  // LONG_PRESS_MS, we temporarily switch to a dropper for the rest of the
+  // gesture. The original tool is restored on pointerup.
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const savedToolRef = useRef<Tool | null>(null);
+  const pointerStartRef = useRef<{ x: number; y: number } | null>(null);
+
+  // Pinch state. We track the *previous* distance between two pointers and
+  // compare it on every move to scale `previewCellScale` up/down. Nothing
+  // fancier — direct manipulation matches user expectation for canvas zoom.
+  const pinchPrevDistRef = useRef<number | null>(null);
 
   // Subscribe to all signals that change what we draw.
   useEffect(() => {
@@ -99,9 +168,33 @@ export function DrawPanel() {
   function handlePointerDown(e: PointerEvent) {
     e.preventDefault();
     (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+    trackPointer(e);
+    pointerStartRef.current = { x: e.clientX, y: e.clientY };
+
+    // Two-finger pinch: when the second touch lands we start tracking the
+    // inter-pointer distance; rapid-mode the gesture, force-end any in-
+    // flight stroke, and don't reopen one until both pointers lift.
+    if (e.pointerType === "touch" && activeTouchPointers() >= 2) {
+      cancelLongPress();
+      pinchPrevDistRef.current = currentPinchDistance();
+      if (store.strokeActive.value) store.endStroke();
+      // Suppress paint for this and any other currently-active pointer; the
+      // pinch handler in `handlePointerMove` is what does the work.
+      store.hover.value = null;
+      return;
+    }
+
     const cell = cellFromEvent(e);
     if (!cell) return;
     lastCellRef.current = cell;
+
+    // Long-press dropper: only for single-touch input on the canvas, where
+    // the user has no RMB to swap tools. Mouse/pen already have right-click
+    // coming soon and we don't want to interfere with fast mouse drags.
+    if (e.pointerType === "touch") {
+      armLongPress(e);
+    }
+
     const tool = store.tool.value;
     if (tool === "bucket") {
       // Bucket fires once on the clicked cell; no drag.
@@ -128,6 +221,24 @@ export function DrawPanel() {
   }
 
   function handlePointerMove(e: PointerEvent) {
+    updatePointer(e);
+
+    // Pinch movement: when a second touch is down, treat the gesture as a
+    // pinch-zoom on `previewCellScale` and don't paint any cells.
+    if (e.pointerType === "touch" && activeTouchPointers() >= 2 && pinchPrevDistRef.current !== null) {
+      cancelLongPress();
+      handlePinchMove();
+      return;
+    }
+
+    // Cancel the long-press dropper if the pointer drifts beyond the slack
+    // radius — the user is drawing, not still-pressing.
+    if (longPressTimerRef.current && pointerStartRef.current) {
+      const dx = e.clientX - pointerStartRef.current.x;
+      const dy = e.clientY - pointerStartRef.current.y;
+      if (Math.hypot(dx, dy) > LONG_PRESS_SLACK_PX) cancelLongPress();
+    }
+
     const cell = cellFromEvent(e);
     if (cell) store.hover.value = cell;
     else store.hover.value = null;
@@ -157,12 +268,27 @@ export function DrawPanel() {
     store.paintLine(prev.x, prev.y, cell.x, cell.y);
   }
 
-  function handlePointerUp(_e: PointerEvent) {
+  function handlePointerUp(e: PointerEvent) {
+    untrackPointer(e);
+    cancelLongPress();
+
+    // If a long-press dropper was active, restore the previous tool.
+    if (savedToolRef.current !== null) {
+      store.setTool(savedToolRef.current);
+      savedToolRef.current = null;
+    }
+
+    // Pinch telemetry is reset as soon as we drop below 2 touch pointers.
+    if (e.pointerType === "touch" && activeTouchPointers() < 2) {
+      pinchPrevDistRef.current = null;
+    }
+
     if (store.tool.value === "line") {
       lineAnchorRef.current = null;
       lineSnapshotRef.current = null;
     }
     lastCellRef.current = null;
+    pointerStartRef.current = null;
     if (store.strokeActive.value) store.endStroke();
   }
 
@@ -174,6 +300,48 @@ export function DrawPanel() {
     const canvas = canvasRef.current;
     if (!canvas) return null;
     return clientToCell(canvas, store.pattern.value, e.clientX, e.clientY);
+  }
+
+  // --- Long-press dropper helpers -----------------------------------------
+
+  function armLongPress(_e: PointerEvent): void {
+    cancelLongPress();
+    longPressTimerRef.current = setTimeout(() => {
+      longPressTimerRef.current = null;
+      // Already on the dropper? skip the temp swap.
+      if (store.tool.value === "dropper") return;
+      savedToolRef.current = store.tool.value;
+      store.setTool("dropper" as Tool);
+      // Also end any in-flight stroke so the lifted-finger release doesn't
+      // stamp a stray cell from the original tool after the user releases.
+      if (store.strokeActive.value) store.endStroke();
+    }, LONG_PRESS_MS);
+  }
+
+  function cancelLongPress(): void {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  }
+
+  // --- Pinch helpers ------------------------------------------------------
+
+  function handlePinchMove(): void {
+    const dist = currentPinchDistance();
+    const prev = pinchPrevDistRef.current;
+    if (prev === null || dist === null) return;
+    // Linear sensitivity: 1px of pinch delta = a small step in cell scale.
+    // We use the *ratio* of new/old distance so the same gesture scales the
+    // same amount regardless of how far apart the fingers started.
+    const ratio = dist / prev;
+    if (Math.abs(ratio - 1) < 0.01) return; // ignore sub-pixel jitter
+    const next = Math.round(store.previewCellScale.value * ratio);
+    const clamped = Math.max(PINCH_MIN_SCALE, Math.min(PINCH_MAX_SCALE, next));
+    if (clamped !== store.previewCellScale.value) {
+      store.setPreviewCellScale(clamped);
+    }
+    pinchPrevDistRef.current = dist;
   }
 
   const label = `${store.pattern.value.width} × ${store.pattern.value.height}`;

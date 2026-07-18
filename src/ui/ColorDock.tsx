@@ -98,7 +98,7 @@ export function ColorDock() {
                   key={i}
                   class={"swatch" + (isCurrent ? " is-active" : "")}
                   title={`${cellToHex(c)} (at current opacity)`}
-                  onClick={() => store.pickColorRgbOnly(c)}
+                  onClick={() => store.pickSwatch(c)}
                 >
                   <div class="swatch-fill" style={{ background: displayCss }} />
                 </button>

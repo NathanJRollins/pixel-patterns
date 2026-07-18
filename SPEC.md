@@ -2,7 +2,7 @@
 
 > A small, fast, opinionated tool for drawing tiny pixel patterns and watching them tile seamlessly across the whole page. Built to be a delight to use, beautiful to look at, and trivial to share.
 
-This document is the design contract for the complete rewrite on branch `ai-overhaul-attempt-01`. The original `script.js` / `index.html` / `style.css` will be deleted; this is a from-scratch rebuild.
+This document is the design contract for the complete rewrite on branch `ai-overhaul-attempt-01`. The original `script.js` / `index.html` / `style.css` was deleted; this is a from-scratch rebuild. Subsequent revisions (the v2 polish pass + this v3 pass) are annotated inline where they changed behaviour — flagged with **[v2]** or **[v3]**.
 
 ---
 
@@ -385,3 +385,43 @@ I'm going to proceed with the design above unless you object. Things I made opin
 4. **Page background becomes your live pattern.** This is the visual headliner. If you find it visually noisy in practice, we can scale it down or default it off — flag it when you see it.
 
 I'll write the spec to a `SPEC.md` at repo root and commit it on this branch so the design has a permanent home. Then I'll scaffold and build.
+
+---
+
+## 13. Post-v1 revisions
+
+This section logs the deltas from the v1 implementation that landed in the v2 polish pass and the v3 pass. Kept here so the SPEC stays a useful contract for the current code, not just the original promise.
+
+### v2 polish (driven by operator UX feedback)
+
+- **Page background & favicon not updating on paint** — v1 had its own data-URL cache in `page-bg.ts` and `favicon.ts` keyed on `mode:w:h:cellPx:tileW*tileH` — *no content fingerprint*. A paint bumped `rev` and re-ran the effect, but the cache hit so the same stale PNG was re-applied. The fix moved the platform cache entirely into `superTileCanvas` (which DOES fingerprint content), and the page-bg/favicon rAF-loop always re-rasterizes against that memoised canvas.
+- **`showGridLines` checkbox was a no-op** — the renderer was always drawing grid lines. Now gated by a `showGridLines` field on `GridRenderInput`, threaded through every call site.
+- **Dropper reset brush over transparent cells** — `pickColor(0)` previously reset the brush to default magenta. It's now a no-op, so an accidental dropper over empty space leaves the brush untouched.
+- **Recents semantics redesigned** — recents dedup by RGB only (so picking the same hue at two different alphas stays one entry, refreshed at the current alpha). The dock renders recents at the *current* alpha so the panel re-tints in lockstep with the alpha slider, the operator's stated "ideal way to operate." The HTML picker's onInput drives a live preview; onChange (release) is what commits to recents, so dragging through the spectrum only adds one entry per drag.
+- **Mirror-axis overlay toggle moved** from DimensionsDock up next to the mirror-mode segmented control on the Toolbar.
+- **ShareModal URL race fixed** — v1 built the share URL inside `useEffect`, so there was a frame on mount where the input/anchor's `href` was empty and a fast Cmd-C or "Open in new tab" click grabbed an empty URL. Now built synchronously in a `useState` lazy initializer.
+- **Export modal gained two modes**: Single tile (one super-tile × cellScale — for OS-level wallpaper tiling, where the OS repeats the pattern itself) and Tile to size (presets FHD/QHD/4K/square, screen-resolution auto-detect, custom WxH — for one-image desktop wallpapers where the tiling is baked into the output).
+- **Cell-scale default** in the export modal now mirrors the preview's current cell scale — "what I see is what I get" out of the box.
+
+### v3 polish (post-v2)
+
+- **`saveSlot` empty-name guard** added at the store layer so any UI / programmatic caller can't persist an empty-named slot.
+- **Swatch click UX**: `pickColorRgbOnly` was renamed `pickSwatch`; clicking a recent swatch now also re-orders it to the top of the recents list (the conventional Photoshop/GIMP swatch behaviour). RGB is picked at the current alpha; the alpha slider stays global to the brush.
+- **Touch: long-press → dropper** is wired. Holding a single-touch pointer still on the canvas for 450 ms temporarily switches to the dropper for the rest of the gesture; the original tool is restored on release. Drifting past 10 px of slack cancels the long-press (so an intended drag doesn't become a dropper by accident).
+- **Touch: two-finger pinch** adjusts `previewCellScale`. Tracks inter-pointer distance per `pointermove`, scales by the new/old ratio (so a pinch gesture always scales by the same ratio regardless of where the fingers started). Range `[1, 32]`. Active touches suppress painting entirely so a stray cell isn't laid down under a pinch.
+- **`prefers-color-scheme` honoured on boot**: a brand-new visitor (no share URL, no autosave) with a light-theme OS preference now lands in the light theme instead of dark. Returning visitors keep whatever they last chose.
+- **Keyboard cheatsheet modal**: `?` (or `Shift+/`) opens a modal listing every keyboard shortcut, grouped by Tools / Mirror / Stroke / History / View / Touch. Bound to the same dismiss-on-backdrop and `Esc`-closing UX as the other modals. A `?` button in the topbar opens the same modal for discoverability.
+- **Line tool brushAnchor artifact concern verified clean** — added a smoke test that exercises the snapshot-revert-and-repaint pattern through several pointermoves and confirms the visible line at every moment is exactly "anchor → current cursor" (intermediate moves do not leave residue). The original implementation was correct; the test pins it.
+- **Sourcemap deployment fix** — `vite.config.ts` switched to `sourcemap: 'hidden'` (the `.map` still builds locally for dev debugging but the JS no longer carries the `sourceMappingURL` comment, so browsers never auto-fetch it on page load); the deploy workflow additionally strips `*.map` from the Pages artifact. Removes ~260 KB sitting unused on the Pages site.
+
+### Build / deployment deltas
+
+- `vite.config.ts` has `sourcemap: 'hidden'`.
+- `.github/workflows/deploy.yml` runs `find dist -name '*.map' -delete` before the Pages artifact upload.
+- The README documents Single tile vs Tile to size export modes, the `?` cheatsheet, and the touch gestures.
+
+### Test coverage as of v3
+
+- Pure domain: color / pattern / mirror / history / tools / randomize / presets / share-url round-trip.
+- happy-dom smoke tests: App+boot mount, paint/undo/redo, save/load/delete slot, preset application, dropper no-op-on-transparent, swatch-tracks-current-alpha, HTML picker drag spam guard, superTileCanvas content invalidation, share-URL boot decode loop, line tool snapshot-revert invariant, and the saveSlot empty-name guard.
+- 84 assertions / 13 test files / all green.
