@@ -21,6 +21,10 @@ import { invalidateSuperTileCache } from "../render/super-tile-canvas.js";
 export function DrawPanel() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const lastCellRef = useRef<{ x: number; y: number } | null>(null);
+  // Line tool stroke state: anchor cell + pre-stroke pattern snapshot, so
+  // we can revert + redraw on every pointermove as the user drags.
+  const lineAnchorRef = useRef<{ x: number; y: number } | null>(null);
+  const lineSnapshotRef = useRef<Uint32Array | null>(null);
 
   // Subscribe to all signals that change what we draw.
   useEffect(() => {
@@ -95,8 +99,25 @@ export function DrawPanel() {
     const cell = cellFromEvent(e);
     if (!cell) return;
     lastCellRef.current = cell;
-    if (store.tool.value === "bucket") {
+    const tool = store.tool.value;
+    if (tool === "bucket") {
+      // Bucket fires once on the clicked cell; no drag.
       store.bucketFillAt(cell.x, cell.y);
+      return;
+    }
+    if (tool === "dropper") {
+      // Dropper samples on down (and on move, see handlePointerMove);
+      // doesn't push history and doesn't open a stroke.
+      store.paintAt(cell.x, cell.y);
+      return;
+    }
+    if (tool === "line") {
+      // Save a pre-stroke snapshot, mark the anchor, push history.
+      lineAnchorRef.current = cell;
+      lineSnapshotRef.current = new Uint32Array(store.pattern.value.cells);
+      lastCellRef.current = cell;
+      store.beginStroke();
+      store.paintAt(cell.x, cell.y);
       return;
     }
     store.beginStroke();
@@ -107,8 +128,26 @@ export function DrawPanel() {
     const cell = cellFromEvent(e);
     if (cell) store.hover.value = cell;
     else store.hover.value = null;
-    if (!store.strokeActive.value && store.tool.value !== "bucket") return;
+    const tool = store.tool.value;
+    if (tool === "bucket") return; // bucket doesn't drag
     if (!cell) return;
+    if (tool === "dropper") {
+      // Continuous pick under the cursor; paintAt is a no-op for dropper
+      // other than the pickColor side effect.
+      store.paintAt(cell.x, cell.y);
+      return;
+    }
+    if (tool === "line") {
+      const anchor = lineAnchorRef.current;
+      const snap = lineSnapshotRef.current;
+      if (!anchor || !snap) return;
+      // Revert to pre-stroke state, then redraw the line from anchor → cell.
+      store.pattern.value.cells.set(snap);
+      store.paintLine(anchor.x, anchor.y, cell.x, cell.y);
+      lastCellRef.current = cell;
+      return;
+    }
+    if (!store.strokeActive.value) return;
     const prev = lastCellRef.current;
     lastCellRef.current = cell;
     if (!prev || (prev.x === cell.x && prev.y === cell.y)) return;
@@ -116,6 +155,10 @@ export function DrawPanel() {
   }
 
   function handlePointerUp(_e: PointerEvent) {
+    if (store.tool.value === "line") {
+      lineAnchorRef.current = null;
+      lineSnapshotRef.current = null;
+    }
     lastCellRef.current = null;
     if (store.strokeActive.value) store.endStroke();
   }
