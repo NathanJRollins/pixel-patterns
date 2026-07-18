@@ -81,12 +81,26 @@ export function App() {
   }, []);
 
   // Dismiss hint rail on first paint interaction.
+  // First rev bump after mount hides the hint and unsubscribes itself. Uses
+  // a `done` flag rather than self-dispose so subscribe's synchronous first
+  // call can't hit a TDZ on `unsub`.
   useEffect(() => {
-    const unsub = store.rev.subscribe(() => {
+    let done = false;
+    let unsub: (() => void) | null = null;
+    unsub = store.rev.subscribe(() => {
+      if (done) return;
+      done = true;
       if (showHint.value) showHint.value = false;
-      unsub();
+      if (unsub) {
+        const fn = unsub;
+        unsub = null;
+        fn();
+      }
     });
-    return () => unsub();
+    return () => {
+      done = true;
+      unsub?.();
+    };
   }, []);
 
   return (
