@@ -11,12 +11,12 @@ import type { Cell } from "./types.js";
 
 export function packRGBA(r: number, g: number, b: number, a: number): Cell {
   if (a === 0) return 0;
-  // | coerces to Int32 (signed); the bit pattern is what we care about and
-  // Uint32Array stores it back as unsigned when written.
-  return (((r & 0xff) << 24) |
+  // `>>> 0` coerces to unsigned Uint32 so the returned value compares equal
+  // when read back from a Uint32Array (which always yields unsigned values).
+  return ((((r & 0xff) << 24) |
     ((g & 0xff) << 16) |
     ((b & 0xff) << 8) |
-    (a & 0xff)) as Cell;
+    (a & 0xff)) >>> 0) as Cell;
 }
 
 export function unpackRGBA(cell: Cell): [r: number, g: number, b: number, a: number] {

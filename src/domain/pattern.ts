@@ -169,16 +169,18 @@ export function encodeHexPlain(p: Pattern): string {
 function decodeHexPlain(s: string, w: number, h: number): Pattern {
   assertDims(w, h);
   const total = w * h;
-  const cells = new Uint32Array(total);
+  const cells = new Uint32Array(total); // defaults to 0 (transparent)
   let i = 0;
   let pos = 0;
-  if (s.length < total * 2) throw new Error("decodeHexPlain: input too short");
+  // Tolerate short bodies: missing cells stay transparent. Tolerate extra
+  // trailing chars: ignored. This keeps share URLs friendly to manual edits
+  // and future field additions.
   while (i < total && pos + 2 <= s.length) {
     if (s[pos] === "-" && s[pos + 1] === "-") {
       cells[i] = 0;
       pos += 2;
     } else {
-      if (pos + 8 > s.length) throw new Error("decodeHexPlain: truncated cell");
+      if (pos + 8 > s.length) break; // truncated final cell → treat as absent
       const r = parseInt(s.slice(pos, pos + 2), 16);
       const g = parseInt(s.slice(pos + 2, pos + 4), 16);
       const b = parseInt(s.slice(pos + 4, pos + 6), 16);

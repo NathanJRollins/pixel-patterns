@@ -63,7 +63,10 @@ export function composeSuperTile(input: Pattern, mode: MirrorMode): Pattern {
   };
   const W = input.width;
   const H = input.height;
-  const sw = input.width; // super-tile width = mode-w * W
+  // Stride of the *output* super-tile — NOT the input width. Writing into
+  // `out.cells` requires the *super-tile* stride, which is 2× input width
+  // under HV / V modes (and input width for H / none).
+  const sw = w;
   // Quadrant 0 (top-left): identity copy.
   copyBlock(input, 0, 0, W, H, out, 0, 0, sw);
   if (mode === "H") {
