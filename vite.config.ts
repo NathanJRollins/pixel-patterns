@@ -15,6 +15,11 @@ export default defineConfig({
   build: {
     target: "es2020",
     outDir: "dist",
-    sourcemap: true,
+    // 'hidden' builds the .map file (useful for local debugging) but omits
+    // the `//# sourceMappingURL=...` comment from the JS, so end-user
+    // browsers never auto-fetch the .map on first hit. Saves ~260 KB on
+    // the deployed Pages site for users who keep DevTools closed; users who
+    // want it can still fetch it manually if we upload it (we won't).
+    sourcemap: "hidden",
   },
 });
