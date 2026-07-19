@@ -19,7 +19,7 @@ const LONG_PRESS_SLACK_PX = 10;
 // Bounds for the pinch gesture. Same range as the cell-size slider in
 // DimensionsDock and the cell-scale field on the store.
 const PINCH_MIN_SCALE = 1;
-const PINCH_MAX_SCALE = 32;
+const PINCH_MAX_SCALE = 64;
 
 /**
  * Module-level pointer footprint. Browsers don't expose a "currently-down
@@ -272,11 +272,20 @@ export function DrawPanel() {
     untrackPointer(e);
     cancelLongPress();
 
-    // If a long-press dropper was active, restore the previous tool.
+    // If a long-press dropper was active, restore the previous tool. This
+    // runs first on purpose: after the long-press restore, `tool.value`
+    // is no longer "dropper", so the manual-dropper `revertDropper` call
+    // below becomes a no-op for that path. The two mechanisms compose.
     if (savedToolRef.current !== null) {
       store.setTool(savedToolRef.current);
       savedToolRef.current = null;
     }
+
+    // Manual dropper path: after a one-shot dropper click (or a
+    // continuous-sample drag), revert to whatever tool the user had
+    // before they picked the dropper from the toolbar. No-op if the
+    // long-press path above already restored.
+    store.revertDropper();
 
     // Pinch telemetry is reset as soon as we drop below 2 touch pointers.
     if (e.pointerType === "touch" && activeTouchPointers() < 2) {

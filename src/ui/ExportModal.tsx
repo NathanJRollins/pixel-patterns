@@ -49,9 +49,16 @@ function detectScreenPreset(): SizePreset {
 
 /** Export the tiled pattern as a PNG at a chosen cell scale. */
 export function ExportModal(props: ExportModalProps) {
-  // Default the cell scale to whatever the preview is using — most users
-  // expect "what I see is what I get" out of the box.
-  const [cellScale, setCellScale] = useState(store.previewCellScale.value);
+  // The export modal's cell-scale is *bound to* `store.previewCellScale`, not
+  // a local copy. Rationale: dragging this slider re-tints the live page
+  // background + preview panel in real time, so the user can see how big
+  // one cell is about to be in the exported PNG without a separate preview.
+  // "What you see is what you get." Whatever cell scale they leave it at
+  // when they close the modal persists into the main app, which is what
+  // they'd expect from a continuous slider. (Local copy would force them
+  // to mentally recompute scale on every drag.)
+  const cellScale = store.previewCellScale.value;
+  const setCellScale = (n: number) => store.setPreviewCellScale(n);
   const [interpolate, setInterpolate] = useState(false);
   const [busy, setBusy] = useState(false);
   const [mode, setMode] = useState<Mode>("single");

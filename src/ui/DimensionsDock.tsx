@@ -36,7 +36,7 @@ export function DimensionsDock() {
         label="Cell size"
         value={store.previewCellScale.value}
         min={1}
-        max={32}
+        max={64}
         step={1}
         onChange={(n) => store.setPreviewCellScale(n)}
         badge={<span class="value">{store.previewCellScale.value}px</span>}
@@ -45,7 +45,7 @@ export function DimensionsDock() {
         label="Page scale"
         value={store.bgScale.value}
         min={1}
-        max={32}
+        max={64}
         step={1}
         onChange={(n) => store.setBgScale(n)}
         badge={<span class="value">{store.bgScale.value}px</span>}

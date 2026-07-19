@@ -185,8 +185,35 @@ class Store {
   setMirrorMode(m: MirrorMode): void {
     this.mirrorMode.value = m;
   }
+
+  /**
+   * The tool the user had active *before* they switched to the dropper.
+   * Captured so a one-shot dropper sample can auto-revert to that tool
+   * (the operator's stated UX preference: "click once with dropper, go
+   * back to whatever I had before"). Defaults to pencil. The long-press
+   * dropper gesture has its own savedToolRef in DrawPanel; these two
+   * mechanisms compose — the long-press restore runs first and makes
+   * `revertDropper` a no-op for that case.
+   */
+  private prevTool: Tool = "pencil";
+
   setTool(t: Tool): void {
-    this.tool.value = t;
+    if (t !== this.tool.value) {
+      // Switching *to* the dropper: remember what we had for a one-shot revert.
+      if (t === "dropper") this.prevTool = this.tool.value;
+      this.tool.value = t;
+    }
+  }
+
+  /**
+   * Revert from dropper to whatever tool the user had before they picked
+   * dropper. No-op if the current tool isn't dropper (e.g. they switched
+   * to something else already, or the long-press path already restored).
+   */
+  revertDropper(): void {
+    if (this.tool.value === "dropper" && this.prevTool !== "dropper") {
+      this.tool.value = this.prevTool;
+    }
   }
   setPreviewCellScale(n: number): void {
     this.previewCellScale.value = Math.max(1, Math.min(64, Math.round(n)));
