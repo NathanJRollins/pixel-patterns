@@ -41,6 +41,15 @@ export function boot(): void {
   // Apply current theme to the body so the first paint is correct.
   document.body.dataset["theme"] = store.theme.value;
 
+  // Listen for hash changes: browsers do NOT reload the page when only the
+  // URL hash changes (e.g. clicking a `#p=...` share link or pasting a share
+  // URL into the address bar of an already-open tab). Without this listener
+  // the share URL would silently fail to apply until the user did a manual
+  // hard refresh, which is exactly the symptom the operator reported.
+  // We re-apply the share payload on every hashchange that *carries* one.
+  // Pasting a non-share hash (or erasing the hash) is a no-op.
+  window.addEventListener("hashchange", onHashChange);
+
   // Autosave on every mutation delta (debounced).
   effect(() => {
     // Subscribe to rev + relevant signals so the effect runs on each change.
@@ -76,4 +85,16 @@ function prefersLightScheme(): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * Hashchange handler: when the URL's hash changes and now carries a share
+ * payload (`#p=...`), re-apply it. The store's {@link Store.loadFromShareUrl}
+ * doesn't write to `location.hash`, so there's no risk of an infinite
+ * re-apply loop. If the hash is cleared or becomes a non-share value, we
+ * silently do nothing — the user's current pattern is preserved.
+ */
+function onHashChange(): void {
+  if (!store.hasShareUrl()) return;
+  store.loadFromShareUrl();
 }
