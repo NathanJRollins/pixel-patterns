@@ -406,3 +406,62 @@ input[type="text"]:focus {
   pointer-events: auto;
   box-shadow: rgba(0, 0, 0, 0.35) 0 4px 12px;
 }
+
+/* MSPaint-style overlapping primary/back + secondary/front squares. */
+.color-square-wrap {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  height: 56px;
+  margin-bottom: 4px;
+}
+.color-square {
+  position: absolute;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  cursor: pointer;
+  overflow: hidden;
+  padding: 0;
+  background: var(--surface-2);
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+  display: block;
+}
+.color-square:hover {
+  transform: translateY(-1px);
+}
+.color-square.is-active {
+  box-shadow: 0 0 0 2px var(--accent), 0 0 0 4px var(--surface-1);
+  z-index: 2;
+}
+.color-square-back {
+  left: 28px;
+  top: 4px;
+  z-index: 1;
+}
+.color-square-front {
+  left: 4px;
+  top: 16px;
+  z-index: 3;
+}
+.color-square.is-active.color-square-front { z-index: 5; }
+.color-square.is-active.color-square-back  { z-index: 4; }
+.color-square-swap {
+  margin-left: auto;
+  padding: 7px 9px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-2);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  align-self: flex-end;
+}
+.color-square-swap:hover {
+  background: var(--surface-3);
+  border-color: var(--border-strong);
+  color: var(--text-1);
+}

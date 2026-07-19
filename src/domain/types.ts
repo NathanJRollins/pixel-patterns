@@ -16,6 +16,12 @@ export type MirrorMode = "none" | "H" | "V" | "HV";
 
 export type Tool = "pencil" | "eraser" | "bucket" | "line" | "dropper";
 
+/** Which of the two paint colour slots an action affects. LMB paints
+ * primary, RMB paints secondary. Most paint actions accept a `which`
+ * parameter (default 'primary') so the caller can route a right-button
+ * stroke to the secondary slot's colour. */
+export type ColorSlot = "primary" | "secondary";
+
 export interface Pattern {
   readonly width: number;
   readonly height: number;

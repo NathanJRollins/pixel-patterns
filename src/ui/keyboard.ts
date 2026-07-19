@@ -73,6 +73,9 @@ export function attachKeyboard(
       case "m":
         cycleMirror();
         break;
+      case "x":
+        store.swapColors();
+        break;
       case "r":
         store.randomize();
         break;

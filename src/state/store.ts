@@ -21,7 +21,7 @@ import { PRESETS } from "../domain/presets.js";
 import { invalidationToken } from "./persistence.js";
 import { shareUrlEncode, shareUrlDecode } from "./share-url.js";
 import { superTileCanvas } from "../render/super-tile-canvas.js";
-import type { Cell, MirrorMode, Pattern, Theme, Tool } from "../domain/types.js";
+import type { Cell, ColorSlot, MirrorMode, Pattern, Theme, Tool } from "../domain/types.js";
 
 /**
  * Central signals-based store.
@@ -34,15 +34,19 @@ import type { Cell, MirrorMode, Pattern, Theme, Tool } from "../domain/types.js"
  * mutating tool fires); undo/redo swap the current pattern back/forward.
  */
 
-const DEFAULT_HEX = "#cc33cc"; // callback to original default color
-const DEFAULT_RECENT_MAX = 12;
+const DEFAULT_HEX = "#cc33cc"; // callback to original default color (primary)
+const DEFAULT_SECONDARY_HEX = "#ffffff"; // MSPaint-style secondary default
+const DEFAULT_RECENT_MAX = 24; // doubled per operator request — there's UI room
 
 export interface Savestate {
   pattern: string; // encoded
   mirrorMode: MirrorMode;
   tool: Tool;
-  hex: string;
-  alpha01: number;
+  hex: string; // primary
+  secondaryHex: string;
+  alpha01: number; // primary
+  secondaryAlpha01: number;
+  activeColorSlot: ColorSlot;
   recentCells: number[];
   previewCellScale: number;
   bgScale: number;
@@ -62,8 +66,15 @@ export interface SlotSerialized {
   mirrorMode: MirrorMode;
 }
 
+/** Which color slot is currently 'active' — i.e. the one the picker / alpha
+ * slider / recents will act on. {@link ColorSlot} is imported from
+ * domain/types; the import alias keeps the call sites short. */
+
 function makeDefaultColor(): Cell {
   return hexToCell(DEFAULT_HEX, 1);
+}
+function makeDefaultSecondaryColor(): Cell {
+  return hexToCell(DEFAULT_SECONDARY_HEX, 1);
 }
 
 function makeDefaultPattern(): Pattern {
@@ -74,6 +85,20 @@ class Store {
   pattern = signal<Pattern>(makeDefaultPattern());
   mirrorMode = signal<MirrorMode>(RANDOMIZE_DEFAULT_MODE); // `HV` by default
   tool = signal<Tool>("pencil");
+
+  // Two color slots, MSPaint-style. `color` and `alpha01` are kept as
+  // *projections* of the currently-active slot for backwards-compat with
+  // existing readers; the per-slot signals are the source of truth.
+  primaryColor = signal<Cell>(makeDefaultColor());
+  secondaryColor = signal<Cell>(makeDefaultSecondaryColor());
+  primaryAlpha01 = signal<number>(1);
+  secondaryAlpha01 = signal<number>(1);
+  activeColorSlot = signal<ColorSlot>("primary");
+
+  /** Active slot's color (projection). Read this in components that don't
+   * care which slot is active. Mutating `.value` would bypass the slot
+   * routing; use {@link setHex} / {@link setAlpha01} / {@link pickColor} /
+   * {@link pickSwatch} instead. */
   color = signal<Cell>(makeDefaultColor());
   alpha01 = signal<number>(1);
   recentCells = signal<Cell[]>([]);
@@ -104,62 +129,126 @@ class Store {
   // Color
   // ---------------------------------------------------------------------------
 
-  setHex(hex: string): void {
-    // Update only the color signal — does NOT bump the recents panel.
-    // Recents should reflect *committed* color picks; an HTML5 color picker
-    // drags one colour per pixel, so pushing every `input` event wipes the
-    // history in a heartbeat. Callers that want to commit a recent push
-    // (HTML picker `change`, dropper sample, recent-swatch click) use
-    // {@link commitRecent} explicitly.
-    this.color.value = hexToCell(hex, this.alpha01.value);
+  /** Switch which slot the picker / alpha / recents act on. */
+  setActiveColorSlot(slot: ColorSlot): void {
+    this.activeColorSlot.value = slot;
+    this.syncColorProjection();
   }
 
-  /** Push the currently-selected color to the recents panel.
-   * De-dups by RGB only — the alpha channel is governed globally by
-   * `alpha01`, so picking the same hue at two different alphas stays one
-   * recent entry (the swatch re-renders at the current alpha). */
-  commitRecent(): void {
-    this.bumpRecent();
-  }
-
-  setAlpha01(a: number): void {
-    this.alpha01.value = a;
-    const [r, g, b] = unpackRGBA(this.color.value || makeDefaultColor());
-    this.color.value = packRGBA(r, g, b, Math.round(a * 255));
+  /** Swap primary ↔ secondary (Photoshop `X`). */
+  swapColors(): void {
+    const pc = this.primaryColor.value;
+    const pa = this.primaryAlpha01.value;
+    this.primaryColor.value = this.secondaryColor.value;
+    this.primaryAlpha01.value = this.secondaryAlpha01.value;
+    this.secondaryColor.value = pc;
+    this.secondaryAlpha01.value = pa;
+    this.syncColorProjection();
   }
 
   /**
-   * Pick the colour of a cell onto the active brush. Used by the dropper
+   * Update the active slot's color from a `#rrggbb` hex string. Does NOT
+   * push to recents — recents reflect *committed* color picks, and an
+   * HTML5 color picker drags one colour per pixel which would wipe the
+   * recents in one drag. Callers that want a recents push (HTML picker
+   * `change`, dropper sample, recent-swatch click) call {@link commitRecent}.
+   *
+   * `which` (optional) overrides the active slot — used by RMB swatch
+   * clicks that fill the inactive slot directly.
+   */
+  setHex(hex: string, which: ColorSlot | null = null): void {
+    const slot = which ?? this.activeColorSlot.value;
+    const a = slot === "primary" ? this.primaryAlpha01.value : this.secondaryAlpha01.value;
+    const cell = hexToCell(hex, a);
+    this.writeSlot(slot, cell);
+    if (slot === this.activeColorSlot.value) this.syncColorProjection();
+  }
+
+  /** Push the active slot's color to the recents panel. RGB-only dedup
+   * (the alpha channel is governed globally per-slot, so picking the same
+   * hue at two different alphas stays one recent entry, re-rendering at
+   * the current alpha). */
+  commitRecent(which: ColorSlot | null = null): void {
+    const slot = which ?? this.activeColorSlot.value;
+    this.bumpRecent(slot);
+  }
+
+  setAlpha01(a: number, which: ColorSlot | null = null): void {
+    const slot = which ?? this.activeColorSlot.value;
+    const currentCell = this.readSlot(slot);
+    const [r, g, b] = unpackRGBA(currentCell || makeDefaultColor());
+    this.writeSlot(slot, packRGBA(r, g, b, Math.round(a * 255)));
+    if (slot === "primary") this.primaryAlpha01.value = a;
+    else this.secondaryAlpha01.value = a;
+    if (slot === this.activeColorSlot.value) this.syncColorProjection();
+  }
+
+  /**
+   * Pick the colour of a cell onto a slot's brush. Used by the dropper
    * tool — copies both RGB and alpha from the sampled cell. Sampling a
    * transparent cell is a no-op (the brush is left untouched), so an
-   * accidental dropper over empty space doesn't yank the picker to the
-   * default magenta.
+   * accidental dropper over empty space doesn't yank the slot to the default.
+   *
+   * `which` defaults to the active slot. RMB-dropper callers pass
+   * `'secondary'` explicitly. The dropper's one-shot auto-revert in
+   * {@link revertDropper} restores the *tool*, not the colour — this
+   * method's effect persists.
    */
-  pickColor(cell: Cell): void {
+  pickColor(cell: Cell, which: ColorSlot | null = null): void {
     if (cell === 0) return;
-    this.color.value = cell;
-    this.alpha01.value = cellAlpha01(cell);
-    this.bumpRecent();
+    const slot = which ?? this.activeColorSlot.value;
+    this.writeSlot(slot, cell);
+    if (slot === "primary") this.primaryAlpha01.value = cellAlpha01(cell);
+    else this.secondaryAlpha01.value = cellAlpha01(cell);
+    this.bumpRecent(slot);
+    if (slot === this.activeColorSlot.value) this.syncColorProjection();
   }
 
   /**
-   * Pick a recent / palette swatch onto the brush. The alpha slider stays
-   * global — only the swatch's RGB is bound onto the brush — so the recents
-   * panel always reads at the current alpha (the "ideal way to operate"
-   * the operator pointed out). Clicking a recent swatch also re-orders it
-   * to the top of the recents list, since "click something you just
-   * grabbed" is the conventional swatch-palette UX (Photoshop, GIMP,
-   * macOS ColorSync).
+   * Pick a recent / palette swatch onto a slot's brush. Only the swatch's
+   * RGB is bound onto the slot's colour; the slot's own alpha slider is
+   * preserved (so the recents panel re-tints at the current alpha —
+   * "ideal way to operate" the operator pointed out). Clicking a recent
+   * swatch also re-orders it to the top of the recents list.
+   *
+   * `which` defaults to the active slot. RMB callers pass `'secondary'`
+   * explicitly so the inactive slot fills without disturbing the active
+   * picker / alpha slider state.
    */
-  pickSwatch(cell: Cell): void {
+  pickSwatch(cell: Cell, which: ColorSlot | null = null): void {
     if (cell === 0) return;
+    const slot = which ?? this.activeColorSlot.value;
+    const a255 =
+      slot === "primary"
+        ? Math.round(this.primaryAlpha01.value * 255)
+        : Math.round(this.secondaryAlpha01.value * 255);
     const [r, g, b] = unpackRGBA(cell);
-    this.color.value = packRGBA(r, g, b, Math.round(this.alpha01.value * 255));
-    this.bumpRecent();
+    this.writeSlot(slot, packRGBA(r, g, b, a255));
+    this.bumpRecent(slot);
+    if (slot === this.activeColorSlot.value) this.syncColorProjection();
   }
 
-  private bumpRecent(): void {
-    const c = this.color.value;
+  /** Read the colour signal of a slot. Helper for the setters. */
+  private readSlot(slot: ColorSlot): Cell {
+    return slot === "primary" ? this.primaryColor.value : this.secondaryColor.value;
+  }
+
+  /** Write the colour signal of a slot. */
+  private writeSlot(slot: ColorSlot, cell: Cell): void {
+    if (slot === "primary") this.primaryColor.value = cell;
+    else this.secondaryColor.value = cell;
+  }
+
+  /** Re-sync the projection signals (`color` / `alpha01`) to the active slot. */
+  private syncColorProjection(): void {
+    const slot = this.activeColorSlot.value;
+    this.color.value = slot === "primary" ? this.primaryColor.value : this.secondaryColor.value;
+    this.alpha01.value =
+      slot === "primary" ? this.primaryAlpha01.value : this.secondaryAlpha01.value;
+  }
+
+  private bumpRecent(which: ColorSlot): void {
+    const c = which === "primary" ? this.primaryColor.value : this.secondaryColor.value;
     if (c === 0) return;
     const rgb = (c >>> 8) & 0xffffff; // alpha-agnostic key
     const list = this.recentCells.value.slice();
@@ -255,25 +344,42 @@ class Store {
     this.history.push(this.pattern.value);
   }
 
-  paintAt(x: number, y: number): void {
+  /**
+   * Paint a single cell with the active (or specified) slot's color.
+   *
+   * `which` defaults to the active slot. RMB drag should pass `'secondary'`
+   * explicitly so right-button strokes paint with the secondary color. The
+   * dropper ignores `which` for paint purposes — when tool === 'dropper'
+   * `paintAt` becomes a color sample that writes to the active slot (the
+   * DrawPanel dropper handler threads `which` from `e.button`).
+   */
+  paintAt(x: number, y: number, which: ColorSlot | null = null): void {
     if (x < 0 || y < 0 || x >= this.pattern.value.width || y >= this.pattern.value.height) return;
     const tool = this.tool.value;
     if (tool === "dropper") {
-      this.pickColor(this.pattern.value.cells[y * this.pattern.value.width + x]);
+      this.pickColor(this.pattern.value.cells[y * this.pattern.value.width + x], which);
       return;
     }
-    const c = tool === "eraser" ? 0 : this.color.value;
+    const slot = which ?? this.activeColorSlot.value;
+    const c = tool === "eraser" ? 0 : this.readSlot(slot);
     this.applyCells([[x, y]], c);
   }
 
   /** Bridge from previous pointer position to current, hitting every cell
    * via Bresenham along the way. Mirroring handled at the cell level. */
-  paintLine(x0: number, y0: number, x1: number, y1: number): void {
+  paintLine(
+    x0: number,
+    y0: number,
+    x1: number,
+    y1: number,
+    which: ColorSlot | null = null,
+  ): void {
     if (this.tool.value === "dropper") {
-      this.paintAt(x1, y1);
+      this.paintAt(x1, y1, which);
       return;
     }
-    const c = this.tool.value === "eraser" ? 0 : this.color.value;
+    const slot = which ?? this.activeColorSlot.value;
+    const c = this.tool.value === "eraser" ? 0 : this.readSlot(slot);
     const hits = bridgeLine(
       x0, y0, x1, y1,
       this.pattern.value.width,
@@ -283,13 +389,14 @@ class Store {
     this.applyCells(hits, c);
   }
 
-  bucketFillAt(x: number, y: number): void {
+  bucketFillAt(x: number, y: number, which: ColorSlot | null = null): void {
     if (this.tool.value !== "bucket") return;
     this.beginStroke();
     const p = this.pattern.value;
     if (x < 0 || y < 0 || x >= p.width || y >= p.height) return;
     const target = p.cells[y * p.width + x];
-    const color = this.color.value;
+    const slot = which ?? this.activeColorSlot.value;
+    const color = this.readSlot(slot);
     if (target === color) return;
     const stack: Array<[number, number]> = [[x, y]];
     const visited = new Uint8Array(p.width * p.height);
@@ -328,9 +435,11 @@ class Store {
     this.endStroke();
   }
 
-  fillPattern(): void {
+  fillPattern(which: ColorSlot | null = null): void {
+    const slot = which ?? this.activeColorSlot.value;
+    const c = this.readSlot(slot);
     this.beginStroke();
-    if (fillPattern(this.pattern.value, this.color.value)) this.bumpRev();
+    if (fillPattern(this.pattern.value, c)) this.bumpRev();
     this.endStroke();
   }
 
@@ -431,8 +540,11 @@ class Store {
     return shareUrlEncode({
       pattern: this.pattern.value,
       mode: this.mirrorMode.value,
-      color: this.color.value,
-      alpha01: this.alpha01.value,
+      color: this.primaryColor.value,
+      alpha01: this.primaryAlpha01.value,
+      secondaryColor: this.secondaryColor.value,
+      secondaryAlpha01: this.secondaryAlpha01.value,
+      activeColorSlot: this.activeColorSlot.value,
     });
   }
 
@@ -445,9 +557,15 @@ class Store {
     }
     this.mirrorMode.value = decoded.mode;
     if (decoded.color !== 0) {
-      this.color.value = decoded.color;
-      this.alpha01.value = cellAlpha01(decoded.color);
+      this.primaryColor.value = decoded.color;
+      this.primaryAlpha01.value = cellAlpha01(decoded.color);
     }
+    if (decoded.secondaryColor !== undefined && decoded.secondaryColor !== 0) {
+      this.secondaryColor.value = decoded.secondaryColor;
+      this.secondaryAlpha01.value = cellAlpha01(decoded.secondaryColor);
+    }
+    if (decoded.activeColorSlot) this.activeColorSlot.value = decoded.activeColorSlot;
+    this.syncColorProjection();
     this.bumpRev();
     return true;
   }
@@ -465,8 +583,11 @@ class Store {
       pattern: encodePattern(this.pattern.value),
       mirrorMode: this.mirrorMode.value,
       tool: this.tool.value,
-      hex: cellToHex(this.color.value),
-      alpha01: this.alpha01.value,
+      hex: cellToHex(this.primaryColor.value),
+      secondaryHex: cellToHex(this.secondaryColor.value),
+      alpha01: this.primaryAlpha01.value,
+      secondaryAlpha01: this.secondaryAlpha01.value,
+      activeColorSlot: this.activeColorSlot.value,
       recentCells: this.recentCells.value,
       previewCellScale: this.previewCellScale.value,
       bgScale: this.bgScale.value,
@@ -486,11 +607,26 @@ class Store {
     }
     if (s.mirrorMode) this.mirrorMode.value = s.mirrorMode;
     if (s.tool) this.tool.value = s.tool;
+    // Primary
     if (typeof s.hex === "string") {
       const alpha = typeof s.alpha01 === "number" ? s.alpha01 : 1;
-      this.color.value = hexToCell(s.hex, alpha);
+      this.primaryColor.value = hexToCell(s.hex, alpha);
     }
-    if (typeof s.alpha01 === "number") this.alpha01.value = s.alpha01;
+    if (typeof s.alpha01 === "number") this.primaryAlpha01.value = s.alpha01;
+    // Secondary (backward-compat: defaults to white at full opacity if absent)
+    if (typeof s.secondaryHex === "string") {
+      const alpha = typeof s.secondaryAlpha01 === "number" ? s.secondaryAlpha01 : 1;
+      this.secondaryColor.value = hexToCell(s.secondaryHex, alpha);
+    } else if (!this.secondaryColor.value) {
+      this.secondaryColor.value = makeDefaultSecondaryColor();
+    }
+    if (typeof s.secondaryAlpha01 === "number") {
+      this.secondaryAlpha01.value = s.secondaryAlpha01;
+    }
+    if (s.activeColorSlot === "primary" || s.activeColorSlot === "secondary") {
+      this.activeColorSlot.value = s.activeColorSlot;
+    }
+    this.syncColorProjection();
     if (Array.isArray(s.recentCells)) this.recentCells.value = s.recentCells as Cell[];
     if (typeof s.previewCellScale === "number") this.previewCellScale.value = s.previewCellScale;
     if (typeof s.bgScale === "number") this.bgScale.value = s.bgScale;
@@ -508,10 +644,14 @@ class Store {
     this.slots.value = [];
     this.pattern.value = makeDefaultPattern();
     this.mirrorMode.value = RANDOMIZE_DEFAULT_MODE;
-    this.color.value = makeDefaultColor();
-    this.alpha01.value = 1;
+    this.primaryColor.value = makeDefaultColor();
+    this.primaryAlpha01.value = 1;
+    this.secondaryColor.value = makeDefaultSecondaryColor();
+    this.secondaryAlpha01.value = 1;
+    this.activeColorSlot.value = "primary";
     this.recentCells.value = [];
     this.tool.value = "pencil";
+    this.syncColorProjection();
     this.history.reset(this.pattern.value);
     this.bumpRev();
   }

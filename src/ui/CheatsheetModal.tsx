@@ -37,10 +37,20 @@ const GROUPS: ShortcutGroup[] = [
     ],
   },
   {
+    title: "Color",
+    items: [
+      { keys: "X", label: "Swap primary ↔ secondary color" },
+      { keys: "LMB click swatch", label: "Fill the active color slot" },
+      { keys: "RMB click swatch", label: "Fill the inactive slot directly (touch: long-press)" },
+      { keys: "LMB paint", label: "Paint with primary color" },
+      { keys: "RMB paint", label: "Paint with secondary color" },
+    ],
+  },
+  {
     title: "Stroke / paint",
     items: [
       { keys: "C", label: "Clear pattern (click twice to confirm on the toolbar)" },
-      { keys: "F", label: "Fill pattern with current color" },
+      { keys: "F", label: "Fill pattern with the active color slot's color" },
       { keys: "R", label: "Randomize (seeded HV-biased)" },
     ],
   },
@@ -66,7 +76,8 @@ const GROUPS: ShortcutGroup[] = [
   {
     title: "Touch (mobile)",
     items: [
-      { keys: "Hold still 0.45s", label: "Temporarily switch to dropper for the rest of the gesture" },
+      { keys: "Hold still 0.45s on canvas", label: "Temporarily switch to dropper for the rest of the gesture" },
+      { keys: "Hold still 0.45s on swatch", label: "Fill the inactive color slot (touch has no RMB)" },
       { keys: "Two-finger pinch", label: "Adjust preview cell size" },
     ],
   },

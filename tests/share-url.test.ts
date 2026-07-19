@@ -26,8 +26,8 @@ function installWindowStub(initialHash = "") {
   );
 }
 
-describe("share-url", () => {
-  it("encodes a pattern into a hash starting with #p=", () => {
+describe("share-url v2 (primary + secondary)", () => {
+  it("encodes a pattern into the 8-field hash starting with #p=", () => {
     installWindowStub();
     const p = emptyPattern(4, 4);
     setCell(p, 0, 0, packRGBA(255, 0, 0, 255));
@@ -36,11 +36,15 @@ describe("share-url", () => {
       mode: "HV",
       color: packRGBA(0xcc, 0x33, 0xcc, 255),
       alpha01: 1,
+      secondaryColor: packRGBA(0xff, 0xff, 0xff, 255),
+      secondaryAlpha01: 1,
+      activeColorSlot: "primary",
     });
-    expect(url.startsWith("#p=4x4,hv,cc33cc,1.00,")).toBe(true);
+    // v2 format: head,mode,hexP,alpha,hexS,alpha,slot,body — 8 comma parts.
+    expect(url.startsWith("#p=4x4,hv,cc33cc,1.00,ffffff,1.00,p,")).toBe(true);
   });
 
-  it("round-trips a pattern through encode + decode", () => {
+  it("round-trips primary + secondary + active slot through encode/decode", () => {
     installWindowStub();
     const p = emptyPattern(5, 5);
     setCell(p, 0, 0, packRGBA(0, 0, 0, 255));
@@ -50,12 +54,17 @@ describe("share-url", () => {
       mode: "V",
       color: packRGBA(0x10, 0x20, 0x30, 255),
       alpha01: 0.5,
+      secondaryColor: packRGBA(0xab, 0xcd, 0xef, 255),
+      secondaryAlpha01: 0.75,
+      activeColorSlot: "secondary",
     });
     (globalThis as unknown as { window: { location: { hash: string } } }).window.location.hash = url;
     const decoded = shareUrlDecode();
     expect(decoded).not.toBeNull();
     expect(decoded!.mode).toBe("V");
     expect(decoded!.alpha01).toBeCloseTo(0.5, 1);
+    expect(decoded!.secondaryAlpha01).toBeCloseTo(0.75, 2);
+    expect(decoded!.activeColorSlot).toBe("secondary");
     expect(decoded!.pattern.width).toBe(5);
     expect(decoded!.pattern.height).toBe(5);
     for (let i = 0; i < p.cells.length; i++) {
@@ -71,5 +80,33 @@ describe("share-url", () => {
   it("decodes null on malformed hash", () => {
     installWindowStub("#p=garbage");
     expect(shareUrlDecode()).toBeNull();
+  });
+});
+
+describe("share-url v1 back-compat (single-color format)", () => {
+  it("v1-format URL (5 fields) decodes with the secondary defaulting to undefined", () => {
+    installWindowStub("#p=4x4,hv,cc33cc,1.00,------");
+    const decoded = shareUrlDecode();
+    expect(decoded).not.toBeNull();
+    expect(decoded!.color).toBe(packRGBA(0xcc, 0x33, 0xcc, 255));
+    expect(decoded!.secondaryColor).toBeUndefined();
+    expect(decoded!.activeColorSlot).toBeUndefined();
+  });
+
+  it("v1-format URL preserves alpha (the single color's alpha becomes primary)", () => {
+    installWindowStub("#p=2x2,n,102030,0.40,------");
+    const decoded = shareUrlDecode();
+    expect(decoded).not.toBeNull();
+    expect(decoded!.alpha01).toBeCloseTo(0.4, 2);
+    expect(decoded!.color).toBe(packRGBA(0x10, 0x20, 0x30, Math.round(0.4 * 255)));
+  });
+
+  it("the store fills the missing secondary from its default on restore (boot's load path)", () => {
+    installWindowStub("#p=2x2,n,102030,1.00,------");
+    const decoded = shareUrlDecode();
+    expect(decoded).not.toBeNull();
+    expect(decoded!.secondaryColor).toBeUndefined();
+    // The store's loadFromShareUrl handles the missing secondary by NOT
+    // overwriting it (so the existing default white stays in place).
   });
 });

@@ -95,6 +95,13 @@ export function DrawPanel() {
   // fancier — direct manipulation matches user expectation for canvas zoom.
   const pinchPrevDistRef = useRef<number | null>(null);
 
+  // Which color slot the current stroke is painting with. Captured on
+  // `pointerdown` from `e.button` (0 = LMB = primary, 2 = RMB = secondary);
+  // threaded through subsequent `pointermove` calls so a held-button drag
+  // keeps painting with the same slot. Touch (no RMB) always paints the
+  // primary slot.
+  const strokeSlotRef = useRef<"primary" | "secondary">("primary");
+
   // Subscribe to all signals that change what we draw.
   useEffect(() => {
     const dispose = effect(() => {
@@ -184,13 +191,19 @@ export function DrawPanel() {
       return;
     }
 
+    // Which color slot this stroke paints with. Touch and pen default to
+    // primary (no right-button on touch); mouse RMB (button 2) paints
+    // secondary. Captured here and threaded through pointermove so a held
+    // drag keeps painting with the same slot even if the user rolls the
+    // other button up/down mid-stroke.
+    strokeSlotRef.current = e.button === 2 ? "secondary" : "primary";
+
     const cell = cellFromEvent(e);
     if (!cell) return;
     lastCellRef.current = cell;
 
     // Long-press dropper: only for single-touch input on the canvas, where
-    // the user has no RMB to swap tools. Mouse/pen already have right-click
-    // coming soon and we don't want to interfere with fast mouse drags.
+    // the user has no RMB to swap tools.
     if (e.pointerType === "touch") {
       armLongPress(e);
     }
@@ -198,13 +211,14 @@ export function DrawPanel() {
     const tool = store.tool.value;
     if (tool === "bucket") {
       // Bucket fires once on the clicked cell; no drag.
-      store.bucketFillAt(cell.x, cell.y);
+      store.bucketFillAt(cell.x, cell.y, strokeSlotRef.current);
       return;
     }
     if (tool === "dropper") {
-      // Dropper samples on down (and on move, see handlePointerMove);
-      // doesn't push history and doesn't open a stroke.
-      store.paintAt(cell.x, cell.y);
+      // Dropper samples on down — writes the picked colour into the slot
+      // owned by the pressed button (LMB → primary, RMB → secondary).
+      // Doesn't push history and doesn't open a stroke.
+      store.paintAt(cell.x, cell.y, strokeSlotRef.current);
       return;
     }
     if (tool === "line") {
@@ -213,11 +227,11 @@ export function DrawPanel() {
       lineSnapshotRef.current = new Uint32Array(store.pattern.value.cells);
       lastCellRef.current = cell;
       store.beginStroke();
-      store.paintAt(cell.x, cell.y);
+      store.paintAt(cell.x, cell.y, strokeSlotRef.current);
       return;
     }
     store.beginStroke();
-    store.paintAt(cell.x, cell.y);
+    store.paintAt(cell.x, cell.y, strokeSlotRef.current);
   }
 
   function handlePointerMove(e: PointerEvent) {
@@ -255,7 +269,7 @@ export function DrawPanel() {
       // over the canvas with no button → no pick; the hover cell outline
       // still shows which cell would be picked on click.
       if (e.buttons === 0) return;
-      store.paintAt(cell.x, cell.y);
+      store.paintAt(cell.x, cell.y, strokeSlotRef.current);
       return;
     }
     if (tool === "line") {
@@ -264,7 +278,7 @@ export function DrawPanel() {
       if (!anchor || !snap) return;
       // Revert to pre-stroke state, then redraw the line from anchor → cell.
       store.pattern.value.cells.set(snap);
-      store.paintLine(anchor.x, anchor.y, cell.x, cell.y);
+      store.paintLine(anchor.x, anchor.y, cell.x, cell.y, strokeSlotRef.current);
       lastCellRef.current = cell;
       return;
     }
@@ -272,7 +286,7 @@ export function DrawPanel() {
     const prev = lastCellRef.current;
     lastCellRef.current = cell;
     if (!prev || (prev.x === cell.x && prev.y === cell.y)) return;
-    store.paintLine(prev.x, prev.y, cell.x, cell.y);
+    store.paintLine(prev.x, prev.y, cell.x, cell.y, strokeSlotRef.current);
   }
 
   function handlePointerUp(e: PointerEvent) {
@@ -377,6 +391,7 @@ export function DrawPanel() {
           onPointerUp={handlePointerUp}
           onPointerLeave={handlePointerLeave}
           onPointerCancel={handlePointerUp}
+          onContextMenu={(e) => e.preventDefault()}
         />
       </div>
     </div>
