@@ -10,8 +10,8 @@ import type { Cell, Pattern } from "./types.js";
  * transparent cells to the {@link Cell} sentinel `0`.
  */
 
-export const DEFAULT_WIDTH = 5;
-export const DEFAULT_HEIGHT = 5;
+export const DEFAULT_WIDTH = 7;
+export const DEFAULT_HEIGHT = 7;
 
 /** Maximum per-side dimension the UI will allow. */
 export const MAX_DIM = 64;

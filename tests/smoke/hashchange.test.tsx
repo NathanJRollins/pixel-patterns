@@ -38,9 +38,9 @@ describe("share URL loads on in-tab hash change", () => {
   it("boot applies a share URL if present on first load", () => {
     // Initial state: empty pattern (from clearAllData).
     expect(store.pattern.value.cells.every((c) => c === 0)).toBe(true);
-    // Stage a share URL with one red cell before boot.
+    // Stage a share URL with one red cell before boot. v2 format: 8 fields.
     const body = "ff0000ff" + "--".repeat(24); // 5x5, cell 0 = red
-    setHash(`#p=5x5,hv,cc33cc,1.00,${body}`);
+    setHash(`#p=5x5,hv,cc33cc,1.00,ffffff,1.00,p,${body}`);
     boot();
     expect(store.pattern.value.cells[0]).toBe(packRGBA(255, 0, 0, 255));
     expect(store.pattern.value.cells[1]).toBe(0);
@@ -55,7 +55,7 @@ describe("share URL loads on in-tab hash change", () => {
     // Simulate the user clicking a share URL in an email / pasting it in
     // the address bar. The browser fires hashchange; it does NOT reload.
     const body = "00ff00ff" + "--".repeat(24); // 5x5, cell 0 = green
-    setHash(`#p=5x5,hv,00ff00,1.00,${body}`);
+    setHash(`#p=5x5,hv,00ff00,1.00,ffffff,1.00,p,${body}`);
     fireHashChange();
 
     // The store now carries the share payload — without any reload.
@@ -83,7 +83,7 @@ describe("share URL loads on in-tab hash change", () => {
   it("erasing the hash (nav to bare URL) does not wipe the in-progress pattern", () => {
     // Stage a share URL then boot.
     const body = "ff0000ff" + "--".repeat(24);
-    setHash(`#p=5x5,hv,cc33cc,1.00,${body}`);
+    setHash(`#p=5x5,hv,cc33cc,1.00,ffffff,1.00,p,${body}`);
     boot();
     expect(store.pattern.value.cells[0]).toBe(packRGBA(255, 0, 0, 255));
 

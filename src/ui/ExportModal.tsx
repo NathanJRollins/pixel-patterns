@@ -62,7 +62,10 @@ export function ExportModal(props: ExportModalProps) {
   const [interpolate, setInterpolate] = useState(false);
   const [busy, setBusy] = useState(false);
   const [mode, setMode] = useState<Mode>("single");
-  const [chosenPresetId, setChosenPresetId] = useState<string>("square");
+  // Default "Tile to size" preset is the user's screen resolution — the
+    // operator's preference. detectScreenPreset() reads window.screen so we
+    // call it lazily here; this is the value the chip-row will start with.
+    const [chosenPresetId, setChosenPresetId] = useState<string>("screen");
   const [customW, setCustomW] = useState(1920);
   const [customH, setCustomH] = useState(1080);
   const [useCustom, setUseCustom] = useState(false);

@@ -42,10 +42,12 @@ describe("App + boot (happy-dom smoke)", () => {
   it("fresh boot leaves the store in its configured defaults", () => {
     boot();
     render(<App />, container);
-    expect(store.pattern.value.width).toBe(5);
-    expect(store.pattern.value.height).toBe(5);
+    expect(store.pattern.value.width).toBe(7);
+    expect(store.pattern.value.height).toBe(7);
     expect(store.mirrorMode.value).toBe("HV");
     expect(store.tool.value).toBe("pencil");
+    expect(store.previewCellScale.value).toBe(3);
+    expect(store.bgScale.value).toBe(1);
   });
 
   it("changing the tool via the store updates the store's tool signal", () => {
@@ -71,7 +73,7 @@ describe("App + boot (happy-dom smoke)", () => {
     for (let i = 0; i < store.pattern.value.cells.length; i++) {
       if (store.pattern.value.cells[i] !== 0) nonZero++;
     }
-    // (0,0) and (1,0) each fan out to 4 mirrored cells on a 5×5 odd grid:
+    // (0,0) and (1,0) each fan out to 4 mirrored cells on a 7×7 odd grid:
     // (0,0)→4 cells, (1,0)→4 cells → 8 painted cells minimum.
     expect(nonZero).toBeGreaterThanOrEqual(8);
 
@@ -98,7 +100,7 @@ describe("App + boot (happy-dom smoke)", () => {
     for (let i = 0; i < store.pattern.value.cells.length; i++) {
       if (store.pattern.value.cells[i] !== 0) nonZero++;
     }
-    expect(nonZero).toBe(25);
+    expect(nonZero).toBe(49); // 7×7 default grid
 
     store.clearPattern();
     let remaining = 0;
@@ -143,7 +145,7 @@ describe("App + boot (happy-dom smoke)", () => {
     for (let i = 0; i < store.pattern.value.cells.length; i++) {
       if (store.pattern.value.cells[i] !== 0) fired++;
     }
-    expect(fired).toBe(25);
+    expect(fired).toBe(49); // 7×7 default grid
 
     store.deleteSlot("alpha");
     expect(store.slots.value.length).toBe(0);

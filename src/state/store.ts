@@ -103,8 +103,12 @@ class Store {
   alpha01 = signal<number>(1);
   recentCells = signal<Cell[]>([]);
 
-  previewCellScale = signal<number>(8);
-  bgScale = signal<number>(4);
+  // New-session defaults: a 7×7 grid with HV mirror at 3px cells tiles to a
+// 14×14 super-tile at 42×42 actual px — a comfortably dense wallpaper. The
+// page background at scale 1 means each super-tile cell is just 1 device px
+// on screen, so the pattern reads at real pixel density.
+previewCellScale = signal<number>(3);
+bgScale = signal<number>(1);
   showPageBg = signal<boolean>(true);
   showGridLines = signal<boolean>(true);
   showMirrorAxis = signal<boolean>(true);
@@ -116,6 +120,25 @@ class Store {
   /** Transient: is a pointer stroke in progress? */
   strokeActive = signal<boolean>(false);
   hover = signal<{ x: number; y: number } | null>(null);
+
+  /**
+   * Bumped whenever the user requests the native HTML5 color picker to open
+   * — via the `C` / `Shift+C` keyboard shortcut. The {@link ColorDock}
+   * component subscribes (via an effect) and calls `.showPicker()` (or
+   * `.click()` as a fallback) on its `<input type="color">` element in
+   * response. The payload indicates whether primary or secondary was
+   * requested, so the dock can temporarily switch the active slot to
+   * secondary under Shift+C and switch back after the picker closes.
+   */
+  openPickerRequest = signal<{ slot: ColorSlot; nonce: number } | null>(null);
+
+  /** Request the native color picker to open for a given slot. `slot`
+   * defaults to the active slot. Used by the `C` / `Shift+C` hotkeys and
+   * any future programmatic caller. */
+  requestOpenColorPicker(slot: ColorSlot | null = null): void {
+    const target = slot ?? this.activeColorSlot.value;
+    this.openPickerRequest.value = { slot: target, nonce: (this.openPickerRequest.value?.nonce ?? 0) + 1 };
+  }
 
   history = new History();
 

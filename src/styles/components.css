@@ -53,9 +53,19 @@
 }
 .btn[aria-pressed="true"],
 .btn.is-active {
-  background: var(--accent-weak);
+  /* Active tool / mode button: solid accent fill + a notch of font weight
+     so the user can tell at a glance which tool/mirror/preset is selected.
+     `--accent-weak` alone read too subtle on the dark surface. */
+  background: var(--accent);
   border-color: var(--accent);
-  color: var(--text-1);
+  color: #ffffff;
+  font-weight: 600;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.15) inset;
+}
+.btn[aria-pressed="true"]:hover,
+.btn.is-active:hover {
+  filter: brightness(1.1);
+  background: var(--accent);
 }
 .btn-danger {
   color: var(--danger);
@@ -185,7 +195,8 @@ input[type="text"]:focus {
   position: relative;
   overflow: hidden;
 }
-.swatch > .swatch-fill {
+.swatch > .swatch-fill,
+.color-square > .swatch-fill {
   position: absolute;
   inset: 0;
 }

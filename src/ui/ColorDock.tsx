@@ -1,3 +1,5 @@
+import { useEffect, useRef } from "preact/hooks";
+import { effect } from "@preact/signals";
 import { cellAlpha01, cellToCss, cellToHex, unpackRGBA } from "../domain/color.js";
 import { store } from "../state/store.js";
 import { saveToast } from "./toast.js";
@@ -32,6 +34,51 @@ export function ColorDock() {
   const activeColor = activeSlot === "primary" ? store.primaryColor.value : store.secondaryColor.value;
   const activeAlpha01 = activeSlot === "primary" ? store.primaryAlpha01.value : store.secondaryAlpha01.value;
   const activeCssColor = cellToCss(activeColor);
+
+  const pickerRef = useRef<HTMLInputElement>(null);
+  // The previous active slot, if Shift+C forced a temporary swap to
+  // secondary. Restored after the picker closes so Shift+C doesn't leave
+  // the user stuck on the secondary slot.
+  const pickerTempSlotRef = useRef<ColorSlot | null>(null);
+
+  // Subscribe to keyboard-triggered picker requests (C / Shift+C).
+  useEffect(() => {
+    const dismiss = effect(() => {
+      const req = store.openPickerRequest.value;
+      if (!req) return;
+      // If the request was for a slot other than the currently active one,
+      // temporarily switch active to that slot so the picker binds to the
+      // right colour via the existing plumbing. Restore after the picker
+      // closes (on `change`).
+      if (req.slot !== store.activeColorSlot.value) {
+        pickerTempSlotRef.current = store.activeColorSlot.value;
+        store.setActiveColorSlot(req.slot);
+      }
+      const input = pickerRef.current;
+      if (!input) return;
+      // `showPicker()` is the programmatic equivalent of clicking the
+      // colour chip in the browser's UI; available in modern
+      // Chromium/Firefox/Safari (2022+). `click()` is the older fallback.
+      try {
+        (input as HTMLInputElement & { showPicker?: () => void }).showPicker?.();
+      } catch {
+        input.click();
+      }
+    });
+    return () => dismiss();
+  }, []);
+
+  function onPickerChange(e: Event) {
+    store.setHex((e.currentTarget as HTMLInputElement).value);
+    store.commitRecent();
+    // Restore the previous active slot if Shift+C had swapped it for this
+    // picking session.
+    if (pickerTempSlotRef.current !== null) {
+      const prev = pickerTempSlotRef.current;
+      pickerTempSlotRef.current = null;
+      store.setActiveColorSlot(prev);
+    }
+  }
 
   return (
     <div class="dock">
@@ -69,6 +116,7 @@ export function ColorDock() {
 
       <div class="row">
         <input
+          ref={pickerRef}
           type="color"
           value={activeHex}
           onInput={(e) => {
@@ -76,11 +124,7 @@ export function ColorDock() {
             // pixel which would wipe the recents list).
             store.setHex((e.currentTarget as HTMLInputElement).value);
           }}
-          onChange={(e) => {
-            // Release → commit the colour to recents.
-            store.setHex((e.currentTarget as HTMLInputElement).value);
-            store.commitRecent();
-          }}
+          onChange={onPickerChange}
           aria-label={`Pick ${activeSlot} color`}
         />
         <div class="overlay-strip" aria-hidden="true">

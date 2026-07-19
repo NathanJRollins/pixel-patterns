@@ -76,11 +76,22 @@ export function attachKeyboard(
       case "x":
         store.swapColors();
         break;
+      case "c":
+        // Open the native color picker. Plain `C` opens for the active
+        // slot; Shift+C opens for the secondary slot (temporarily
+        // switching the active slot so the picker binds to the right
+        // colour via the dock's existing plumbing — the dock restores
+        // the previous active slot after the picker closes).
+        if (e.shiftKey) store.requestOpenColorPicker("secondary");
+        else store.requestOpenColorPicker();
+        break;
       case "r":
         store.randomize();
         break;
-      case "c":
+      case "backspace":
+      case "delete":
         store.clearPattern();
+        saveToast("Cleared");
         break;
       case "f":
         store.fillPattern();

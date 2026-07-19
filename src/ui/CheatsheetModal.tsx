@@ -40,6 +40,8 @@ const GROUPS: ShortcutGroup[] = [
     title: "Color",
     items: [
       { keys: "X", label: "Swap primary ↔ secondary color" },
+      { keys: "C", label: "Open the native color picker for the active slot" },
+      { keys: "Shift+C", label: "Open the native color picker for the secondary slot" },
       { keys: "LMB click swatch", label: "Fill the active color slot" },
       { keys: "RMB click swatch", label: "Fill the inactive slot directly (touch: long-press)" },
       { keys: "LMB paint", label: "Paint with primary color" },
@@ -49,7 +51,7 @@ const GROUPS: ShortcutGroup[] = [
   {
     title: "Stroke / paint",
     items: [
-      { keys: "C", label: "Clear pattern (click twice to confirm on the toolbar)" },
+      { keys: "Backspace / Delete", label: "Clear pattern (toolbar has two-tap confirm)" },
       { keys: "F", label: "Fill pattern with the active color slot's color" },
       { keys: "R", label: "Randomize (seeded HV-biased)" },
     ],

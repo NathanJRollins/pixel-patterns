@@ -81,32 +81,10 @@ describe("share-url v2 (primary + secondary)", () => {
     installWindowStub("#p=garbage");
     expect(shareUrlDecode()).toBeNull();
   });
-});
 
-describe("share-url v1 back-compat (single-color format)", () => {
-  it("v1-format URL (5 fields) decodes with the secondary defaulting to undefined", () => {
+  it("decodes null when the field count is not 8 (no back-compat)", () => {
+    // Old single-color format with 5 parts is no longer decoded.
     installWindowStub("#p=4x4,hv,cc33cc,1.00,------");
-    const decoded = shareUrlDecode();
-    expect(decoded).not.toBeNull();
-    expect(decoded!.color).toBe(packRGBA(0xcc, 0x33, 0xcc, 255));
-    expect(decoded!.secondaryColor).toBeUndefined();
-    expect(decoded!.activeColorSlot).toBeUndefined();
-  });
-
-  it("v1-format URL preserves alpha (the single color's alpha becomes primary)", () => {
-    installWindowStub("#p=2x2,n,102030,0.40,------");
-    const decoded = shareUrlDecode();
-    expect(decoded).not.toBeNull();
-    expect(decoded!.alpha01).toBeCloseTo(0.4, 2);
-    expect(decoded!.color).toBe(packRGBA(0x10, 0x20, 0x30, Math.round(0.4 * 255)));
-  });
-
-  it("the store fills the missing secondary from its default on restore (boot's load path)", () => {
-    installWindowStub("#p=2x2,n,102030,1.00,------");
-    const decoded = shareUrlDecode();
-    expect(decoded).not.toBeNull();
-    expect(decoded!.secondaryColor).toBeUndefined();
-    // The store's loadFromShareUrl handles the missing secondary by NOT
-    // overwriting it (so the existing default white stays in place).
+    expect(shareUrlDecode()).toBeNull();
   });
 });
