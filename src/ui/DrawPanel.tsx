@@ -246,8 +246,15 @@ export function DrawPanel() {
     if (tool === "bucket") return; // bucket doesn't drag
     if (!cell) return;
     if (tool === "dropper") {
-      // Continuous pick under the cursor; paintAt is a no-op for dropper
-      // other than the pickColor side effect.
+      // Sample ONLY while a button is held — never on bare hover. Hover
+      // with the dropper would otherwise displace the brush colour with
+      // whatever's under the cursor as the user slides out of the
+      // canvas, which is exactly the operator's reported bug. Touch
+      // long-press dropper holds button 1 (touch primary) during the
+      // drag, so continuous sampling still works there. Bare mouse-move
+      // over the canvas with no button → no pick; the hover cell outline
+      // still shows which cell would be picked on click.
+      if (e.buttons === 0) return;
       store.paintAt(cell.x, cell.y);
       return;
     }

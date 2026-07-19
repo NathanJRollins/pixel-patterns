@@ -50,6 +50,15 @@ export function boot(): void {
   // Pasting a non-share hash (or erasing the hash) is a no-op.
   window.addEventListener("hashchange", onHashChange);
 
+  // Suppress middle-click auto-scroll. The browser's middle-mouse "round
+  // cursor with scroll arrows" mode is a navigation aid for long pages —
+  // on a single-viewport paint app it's only ever triggered by accident
+  // and feels broken. We absorb the middle-click on `mousedown` (and the
+  // `auxclick` that follows in some browsers) so it stays inert.
+  // Wheel scrolling and keyboard scrolling are unaffected.
+  window.addEventListener("mousedown", suppressMiddleClick, { passive: false });
+  window.addEventListener("auxclick", suppressMiddleClick, { passive: false });
+
   // Autosave on every mutation delta (debounced).
   effect(() => {
     // Subscribe to rev + relevant signals so the effect runs on each change.
@@ -97,4 +106,19 @@ function prefersLightScheme(): boolean {
 function onHashChange(): void {
   if (!store.hasShareUrl()) return;
   store.loadFromShareUrl();
+}
+
+/**
+ * Middle-click (button 1) suppression. Browsers' default middle-click
+ * behaviour on a page is the auto-scroll "round cursor with arrows" mode,
+ * which is only ever triggered accidentally on a paint app and feels
+ * broken. `preventDefault` on `mousedown` reliably suppresses it across
+ * Chromium / Firefox / Safari. The `auxclick` listener catches browsers
+ * that fire the click event separately from the mousedown.
+ */
+function suppressMiddleClick(e: MouseEvent): void {
+  if (e.button === 1) {
+    e.preventDefault();
+    e.stopPropagation();
+  }
 }

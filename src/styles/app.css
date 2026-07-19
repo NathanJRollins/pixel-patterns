@@ -15,6 +15,23 @@ body {
   color: var(--text-1);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  /* A paint/draw tool expects drags to paint, not select text. We disable
+     selection page-wide; specific surfaces (form inputs, the share URL
+     field, cheatsheet text) opt back in via `user-select: text` below. */
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Keep selection where the user actually wants it: text they can edit,
+   and text they may want to copy (the share URL, the cheatsheet, the
+   noscript fallback). */
+input,
+textarea,
+[contenteditable],
+.modal,
+noscript {
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 #app {
