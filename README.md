@@ -23,15 +23,16 @@ Whatever you paint in the input grid is composed into a four-way mirror-symmetri
 - **Share URL**: compresses pattern + mode + color + alpha into the URL `#p=...` hash. No backend, no length issues for typical patterns.
 - **Presets**: 12 hand-curated starters (checkerboard, diamond, plus, brick, wave, dots, leaf, zigzag, heart, star, triangle, weave).
 - **Randomize**: a biased, seeded generator (`mulberry32` + curated palette + sparse clustered strokes). Default to `HV` so it's seamless out of the box. `R` to trigger.
-- **Undo / redo**: stroke-boundary snapshots, 64-step cap. `Ctrl/Cmd+Z`, `Ctrl/Cmd+Shift+Z` (or `Y`).
-- **Theming**: light + dark via `body[data-theme]`. Respects `prefers-color-scheme`.
+- **Undo / redo**: stroke-boundary snapshots in a lazy-grow byte-budgeted history (256 MB ceiling, never reserves). `Ctrl/Cmd+Z`, `Ctrl/Cmd+Shift+Z` (or `Y`). History is session-local; it resets on page reload (autosave stores only the current pattern + UI state, so reloading frees the memory).
+- **Theming**: light + dark via `body[data-theme]`. Respects `prefers-color-scheme` on first visit; remembers your last choice afterward.
 - **Crisp rendering**: `image-rendering: pixelated`, `imageSmoothingEnabled = false`, device-pixel-ratio-scaled canvas backing stores.
-- **Pixel-perfect PNG export** (or optional bilinear smoothing) at any cell scale.
-- **Touch + accessibility**: pointer events; all tools reachable via keyboard; ARIA labels on tool buttons; `prefers-reduced-motion` honored. Long-press on the canvas → temporary dropper for the rest of the gesture; two-finger pinch → adjust preview cell scale.
-- **Two-tap Clear** (and "Clear all local data" in settings) instead of "are you sure?" modals — keep your rhythm.
+- **Pixel-perfect PNG export** (or optional bilinear smoothing) at any cell scale. Modal has Single tile (for OS-level wallpaper tiling) *and* Tile to size (presets FHD/QHD/4K/square/screen-resolution auto-detect/custom W×H, tiling baked in). Cell-scale slider drives the live preview so you can see what you're exporting.
+- **Primary + secondary colors (MSPaint-style)**: LMB paints primary, RMB paints secondary. Overlapping front/back squares in the ColorDock. `X` swaps; `C` opens the native picker for the active slot, `Shift+C` for the secondary slot. RMB click on a swatch fills the inactive slot directly (touch long-press does the same).
+- **Touch + accessibility**: pointer events; all tools reachable via keyboard; ARIA labels on tool buttons; `prefers-reduced-motion` honored. Long-press on the canvas → temporary dropper for the rest of the gesture; long-press on a swatch → fill the inactive color slot; two-finger pinch → adjust preview cell scale.
+- **Two-tap Clear** (and "Clear all local data" in settings) instead of "are you sure?" modals — keep your rhythm. `Backspace` / `Delete` keyboard clear.
 - **Odd/even badges** on dimension sliders: odd values allow tighter mirror symmetry around a center axis.
-- **Cheatsheet modal**: `?` opens a single place that lists every keyboard shortcut + touch gesture.
-- **Export modal**: choose Single tile (one super-tile output you let the OS wallpaper-repeat) or Tile to size (presets FHD/QHD/4K/square/screen plus custom W×H, with the tiling baked in). Cell-scale defaults to the preview's so "what you see is what you get."
+- **Cheatsheet modal**: `?` opens a single place that lists every keyboard shortcut + touch gesture groupings.
+- **New-session defaults**: 7×7 grid, cell size 3, page scale 1, primary `#cc33cc`, secondary `#ffffff`, `HV` mirror. A 14×14 super-tile at 42×42 device px — a comfortably dense wallpaper.
 
 ## Stack
 
@@ -65,7 +66,7 @@ npm run dev          # http://localhost:5173/pixel-patterns/
 npm run typecheck
 npm run build        # → dist/
 npm run preview      # serves dist/ at /pixel-patterns/
-npm test             # vitest run (pure domain + happy-dom smoke, 84 assertions)
+npm test             # vitest run (pure domain + happy-dom smoke, 122 assertions)
 ```
 
 ## Deploy

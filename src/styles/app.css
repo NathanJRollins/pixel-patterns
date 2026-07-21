@@ -214,3 +214,84 @@ canvas.drawgrid {
     animation-duration: 0ms !important;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   Phone-portrait responsive pass (max-width: 600px)
+
+   The 900px breakpoint stacks the two canvas panels and the dock rows;
+   under 600px we additionally tighten the topbar (it wraps the toolbar
+   under the brand on its own row), shrink the canvas panels to be more
+   finger-tall than eye-tall, and move the share/export/settings actions
+   into a sub-row to keep them all reachable with the thumb of the hand
+   holding the phone. The modals go edge-to-edge so their inputs get
+   ~full screen width to type into.
+--------------------------------------------------------------------------- */
+@media (max-width: 600px) {
+  .topbar {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 8px 10px;
+    position: static; /* sticky top-bar wastes too much vertical on phones */
+  }
+  .brand .title {
+    font-size: 13px;
+  }
+  /* Toolbar fills the second row on its own, full-width — easy thumb target. */
+  .toolbar {
+    order: 3;
+    width: 100%;
+    justify-content: flex-start;
+  }
+  .topbar-actions {
+    margin-left: auto;
+    gap: 4px;
+  }
+  .main {
+    padding: 8px;
+    gap: 8px;
+  }
+  .canvas-split {
+    gap: 8px;
+  }
+  /* Make each canvas panel taller so touch-dragging has more real estate
+     without the keyboard / browser chrome eating it. */
+  canvas.preview,
+  canvas.drawgrid {
+    aspect-ratio: 1 / 1; /* keep square — predictable cell-math — but
+                 let it grow to viewport width naturally */
+  }
+  .panel-header {
+    padding: 6px 10px;
+    font-size: 11px;
+  }
+  .panel-body {
+    padding: 6px;
+  }
+  .dock {
+    padding: 10px;
+    gap: 8px;
+  }
+  .dock-title {
+    font-size: 10px;
+  }
+  .shelf > .dock {
+    min-width: 0;
+  }
+  /* The double-square colour selector gets a touch larger so fingers find
+     the front + back square individually without also tapping the swap
+     button. */
+  .color-square-wrap {
+    height: 64px;
+  }
+  .color-square {
+    width: 40px;
+    height: 40px;
+  }
+  .color-square-back {
+    left: 32px;
+  }
+  .color-square-front {
+    left: 6px;
+    top: 20px;
+  }
+}

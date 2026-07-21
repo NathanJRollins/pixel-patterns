@@ -674,6 +674,7 @@ bgScale = signal<number>(1);
     this.activeColorSlot.value = "primary";
     this.recentCells.value = [];
     this.tool.value = "pencil";
+    this.openPickerRequest.value = null;
     this.syncColorProjection();
     this.history.reset(this.pattern.value);
     this.bumpRev();

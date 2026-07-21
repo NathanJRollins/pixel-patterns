@@ -1,5 +1,4 @@
 import { useEffect, useRef } from "preact/hooks";
-import { effect } from "@preact/signals";
 import { cellAlpha01, cellToCss, cellToHex, unpackRGBA } from "../domain/color.js";
 import { store } from "../state/store.js";
 import { saveToast } from "./toast.js";
@@ -41,38 +40,54 @@ export function ColorDock() {
   // the user stuck on the secondary slot.
   const pickerTempSlotRef = useRef<ColorSlot | null>(null);
 
-  // Subscribe to keyboard-triggered picker requests (C / Shift+C).
+  // Subscribe to keyboard-triggered picker requests (C / Shift+C). We read
+  // `store.openPickerRequest.value` in the render body so Preact re-renders
+  // this component when it changes, and use a `useEffect` keyed on the
+  // request value to do the picker pop-up. This pattern lets Preact
+  // control the timing (post-render microtask) so we don't try to talk
+  // to the DOM before it's updated.
+  const pickerRequest = store.openPickerRequest.value;
   useEffect(() => {
-    const dismiss = effect(() => {
-      const req = store.openPickerRequest.value;
-      if (!req) return;
-      // If the request was for a slot other than the currently active one,
-      // temporarily switch active to that slot so the picker binds to the
-      // right colour via the existing plumbing. Restore after the picker
-      // closes (on `change`).
-      if (req.slot !== store.activeColorSlot.value) {
-        pickerTempSlotRef.current = store.activeColorSlot.value;
-        store.setActiveColorSlot(req.slot);
-      }
-      const input = pickerRef.current;
-      if (!input) return;
-      // `showPicker()` is the programmatic equivalent of clicking the
-      // colour chip in the browser's UI; available in modern
-      // Chromium/Firefox/Safari (2022+). `click()` is the older fallback.
-      try {
-        (input as HTMLInputElement & { showPicker?: () => void }).showPicker?.();
-      } catch {
-        input.click();
-      }
-    });
-    return () => dismiss();
-  }, []);
+    if (!pickerRequest) return;
+    // If the request was for a slot other than the currently active one,
+    // temporarily switch active to that slot so the picker binds to the
+    // right colour via the existing plumbing. Restore after the picker
+    // closes (on `change` or `blur`).
+    if (pickerRequest.slot !== store.activeColorSlot.value) {
+      pickerTempSlotRef.current = store.activeColorSlot.value;
+      store.setActiveColorSlot(pickerRequest.slot);
+    }
+    const input = pickerRef.current;
+    if (!input) return;
+    // `showPicker()` is the programmatic equivalent of clicking the
+    // colour chip in the browser's UI; available in modern
+    // Chromium/Firefox/Safari (2022+). `click()` is the older fallback.
+    try {
+      (input as HTMLInputElement & { showPicker?: () => void }).showPicker?.();
+    } catch {
+      input.click();
+    }
+  }, [pickerRequest]);
 
   function onPickerChange(e: Event) {
     store.setHex((e.currentTarget as HTMLInputElement).value);
     store.commitRecent();
-    // Restore the previous active slot if Shift+C had swapped it for this
-    // picking session.
+    restoreTempSlot();
+  }
+
+  function onPickerBlur() {
+    // The native color picker closes (with or without a `change`) by
+    // blurring the input. If Shift+C temporarily flipped the active slot
+    // for this pick session, restore it now so the user doesn't end up
+    // stuck in the secondary slot after dismissing the picker with
+    // Escape / clicking outside / hitting `Esc` in the modal.
+    restoreTempSlot();
+  }
+
+  /** Restore the previously-active slot if Shift+C had temporarily
+   * swapped it; clear the swap ref so subsequent normal clicks are
+   * treated as their own (non-temporary) session. */
+  function restoreTempSlot(): void {
     if (pickerTempSlotRef.current !== null) {
       const prev = pickerTempSlotRef.current;
       pickerTempSlotRef.current = null;
@@ -125,6 +140,7 @@ export function ColorDock() {
             store.setHex((e.currentTarget as HTMLInputElement).value);
           }}
           onChange={onPickerChange}
+          onBlur={onPickerBlur}
           aria-label={`Pick ${activeSlot} color`}
         />
         <div class="overlay-strip" aria-hidden="true">

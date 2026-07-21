@@ -408,20 +408,58 @@ This section logs the deltas from the v1 implementation that landed in the v2 po
 - **`saveSlot` empty-name guard** added at the store layer so any UI / programmatic caller can't persist an empty-named slot.
 - **Swatch click UX**: `pickColorRgbOnly` was renamed `pickSwatch`; clicking a recent swatch now also re-orders it to the top of the recents list (the conventional Photoshop/GIMP swatch behaviour). RGB is picked at the current alpha; the alpha slider stays global to the brush.
 - **Touch: long-press → dropper** is wired. Holding a single-touch pointer still on the canvas for 450 ms temporarily switches to the dropper for the rest of the gesture; the original tool is restored on release. Drifting past 10 px of slack cancels the long-press (so an intended drag doesn't become a dropper by accident).
-- **Touch: two-finger pinch** adjusts `previewCellScale`. Tracks inter-pointer distance per `pointermove`, scales by the new/old ratio (so a pinch gesture always scales by the same ratio regardless of where the fingers started). Range `[1, 32]`. Active touches suppress painting entirely so a stray cell isn't laid down under a pinch.
+- **Touch: two-finger pinch** adjusts `previewCellScale`. Tracks inter-pointer distance per `pointermove`, scales by the new/old ratio (so a pinch gesture always scales by the same ratio regardless of where the fingers started). Range `[1, 64]` (raised from the original 32 to align with the cell-scale slider + store clamp at 64).
 - **`prefers-color-scheme` honoured on boot**: a brand-new visitor (no share URL, no autosave) with a light-theme OS preference now lands in the light theme instead of dark. Returning visitors keep whatever they last chose.
-- **Keyboard cheatsheet modal**: `?` (or `Shift+/`) opens a modal listing every keyboard shortcut, grouped by Tools / Mirror / Stroke / History / View / Touch. Bound to the same dismiss-on-backdrop and `Esc`-closing UX as the other modals. A `?` button in the topbar opens the same modal for discoverability.
-- **Line tool brushAnchor artifact concern verified clean** — added a smoke test that exercises the snapshot-revert-and-repaint pattern through several pointermoves and confirms the visible line at every moment is exactly "anchor → current cursor" (intermediate moves do not leave residue). The original implementation was correct; the test pins it.
+- **Keyboard cheatsheet modal**: `?` (or `Shift+/`) opens a modal listing every keyboard shortcut, grouped by Tools / Mirror / Color / Stroke / History / View / Touch. Bound to the same dismiss-on-backdrop and `Esc`-closing UX as the other modals. A `?` button in the topbar opens the same modal for discoverability.
+- **Line tool brushAnchor artifact concern verified clean** — a smoke test exercises the snapshot-revert-and-repaint pattern through several pointermoves and confirms the visible line at every moment is exactly "anchor → current cursor" (intermediate moves do not leave residue). The original implementation was correct; the test pins it.
 - **Sourcemap deployment fix** — `vite.config.ts` switched to `sourcemap: 'hidden'` (the `.map` still builds locally for dev debugging but the JS no longer carries the `sourceMappingURL` comment, so browsers never auto-fetch it on page load); the deploy workflow additionally strips `*.map` from the Pages artifact. Removes ~260 KB sitting unused on the Pages site.
+- **History is byte-budgeted at 256 MB**, not count-capped at 64. Lazy-grow, never reservations. See the **History byte-budget** section below.
 
-### Build / deployment deltas
+### v4 polish (post-v3)
+
+- **In-tab navigation loads share URLs** — browsers don't reload on pure hash change. A `window.addEventListener("hashchange")` in `init.ts` re-applies the share payload via `store.loadFromShareUrl()` whenever the new hash carries one. No reload, no flash, no network refetch. Erasing the hash or pasting a non-share hash is a no-op (user's in-progress pattern is preserved).
+- **History ceiling raised from 64 snapshots / 1 MB to 256 MB lazily held** — see **History byte-budget** section below.
+- **Dropper samples only on click; hover is a no-op** — v3's `handlePointerMove` dropper branch fired `paintAt` on every move regardless of `e.buttons`, so moving the cursor across the canvas with the dropper armed silently overwrote the active color with whatever cell the cursor passed over. The gate is now `e.buttons !== 0` — a real held button — and bare mouse-hover leaves the brush untouched. Touch long-press dropper still works (touch-drag holds button 1).
+- **Text selection disabled page-wide** via `user-select: none` on `body`; opt-back-in on `input`, `textarea`, `[contenteditable]`, `.modal` (the share URL field and cheatsheet text the user may want to copy), and `<noscript>`. A paint/draw tool expects drags to paint, not select text.
+- **Middle-click (button 1) auto-scroll suppressed** at the window level via `preventDefault` on `mousedown` and `auxclick`. The browser's "round cursor with arrows" mode is only triggered accidentally here; wheel scrolling and keyboard scrolling unaffected.
+- **Primary / secondary color model (MSPaint-style)** — two color slots (`primaryColor` / `secondaryColor` + their alpha signals + an `activeColorSlot` signal). LMB paints primary, RMB paints secondary. The ColorDock has overlapping front/back squares (front = primary, back = secondary) plus a `⇄` swap button. RMB on a swatch fills the inactive slot directly; touch long-press on a swatch does the same. `X` swaps slots (Photoshop convention). Series of `setHex` / `setAlpha01` / `pickColor` / `pickSwatch` / `fillPattern` accept an optional `which: ColorSlot` parameter. Recents list unified across both slots, cap doubled from 12 to 24. `color` / `alpha01` signals kept as projections of the active slot so existing readers stay honest.
+- **ShareModal URL built synchronously** in a `useState` lazy initializer (was inside `useEffect` → race frame where empty URL could be Cmd-C'd).
+- **Export modal cell-scale bound to `store.previewCellScale`** (was a local copy) — dragging the slider re-tints the live page bg + preview in real time, so the user can see how big one cell will be in the exported PNG before committing. Modal default for `Tile to size` is the user's screen-resolution preset (was 1024 square).
+- **Dropper auto-reverts after a click** — `store.setTool` captures the previous tool whenever the user switches *to* the dropper; `store.revertDropper()` returns to that previous tool on `pointerup`. Composes cleanly with the long-press dropper path (which restores via its own savedToolRef first and leaves the tool non-dropper, so the explicit revert short-circuits).
+- **CSS bug: color squares showed no color** — the `.swatch-fill` rule was scoped to `.swatch > .swatch-fill` only; the `.color-square` parent the new double-square used wasn't covered. Selector widened to also match `.color-square > .swatch-fill`.
+- **Page background flicker to black eliminated** — setting `body.style.backgroundImage = url(data:` invalidates the *previous* image the instant the new CSS commits, but the *new* PNG still has to decode before it can paint; for large super-tiles that decode window let the dark `--surface-0` body bg flash through. Fix: preload the new PNG via `new Image()` and only swap the body bg in `img.onload`. The old image is shown right up until the new one is ready, then the swap is paint-atomic. `onerror` falls back to swap-immediately.
+- **Color picker hotkey: `C` for the active slot, `Shift+C` for the secondary slot.** `store.requestOpenColorPicker(slot)` action bumps an `openPickerRequest` signal the ColorDock subscribes to; the dock calls `HTMLInputElement.showPicker()` (with a `.click()` fallback) and temporarily switches the active slot when `Shift+C` requested, restoring on `change` or `blur`. Clear-pattern moved off `C` to `Backspace` / `Delete` so a single keystroke no longer wipes a pattern.
+- **New-session defaults changed**: Width × Height = 7 × 7, Cell size = 3, Page scale = 1 (was 5 × 5 / 8 / 4). A 7×7 HV-mirrored super-tile becomes a 14×14 at 42×42 device px — a comfortably dense wallpaper. Page scale 1 = one super-tile cell per device pixel on screen, so the page background reads at real pixel density.
+- **Active tool / mirror-mode button is visibly pressed.** Previous `accent-weak` background was easy to miss on the dark surface; replaced with solid `--accent` fill + white text + `font-weight: 600`, matching the Photoshop / Aseprite convention for the active tool in a group.
+- **v1 (single-color) share URL back-compat dropped.** The codec now accepts exactly one format — the 8-field v2 form `#p=WxH,mode,hexP,alpha,hexS,alphaS,slot,cells`. Old 5-field URLs decode cleanly to null. Per operator: nothing's published yet, so the v1 shim was pure complexity for zero reachable users.
+
+### History byte-budget (v3 → v4 boundary)
+
+Replaces the v1 fixed `HISTORY_CAP = 64` with a lazy-grow byte-budget model. Memory is allocated per-paint — empty history still holds 0 bytes; the budget is a ceiling on what can accumulate, not a reservation.
+
+- **Default budget: 256 MB.** Session-local cap; history is never persisted across page reloads (only the current pattern + UI state autosaves), so the budget is a per-session local ceiling.
+- **Snapshots held** at this budget for typical patterns:
+
+  | Pattern | Per snapshot | Snapshots held |
+  |---|---|---|
+  | 7 × 7 (default) | 196 B | ~1.4M |
+  | 16 × 16 | 1 KB | ~262K |
+  | 32 × 32 | 4 KB | ~65K |
+  | 64 × 64 (max grid) | 16 KB | ~16K |
+
+- **`MIN_SNAPSHOTS = 8` floor** — a single huge pattern never wipes history below a usable number of undo steps, even if one snapshot alone exceeds the byte budget. Better to overshoot than to lose all undo.
+- **Redo stack** respects the same byte-budget + MIN floor.
+- **Diagnostic accessors** `bytesHeld()` / `undoDepth()` / `redoDepth()` exposed on the `History` class for any future in-ui memory meter.
+- **Eviction cost is O(n) per push when over budget** — `Array.shift()` at the cap. For 4k-snapshot saturation on a 64×64 pattern that's a ~64 KB copy per eviction stroke — negligible. Only matters at budgets in the GB range; a true O(1) ring buffer isn't worth the complexity at 256 MB.
+
+### Build / deployment deltas (cumulative)
 
 - `vite.config.ts` has `sourcemap: 'hidden'`.
 - `.github/workflows/deploy.yml` runs `find dist -name '*.map' -delete` before the Pages artifact upload.
-- The README documents Single tile vs Tile to size export modes, the `?` cheatsheet, and the touch gestures.
+- The README documents Single tile vs Tile to size export modes, the `?` cheatsheet, the touch gestures, the primary/secondary color model, and the current test count.
 
-### Test coverage as of v3
+### Test coverage as of v4
 
-- Pure domain: color / pattern / mirror / history / tools / randomize / presets / share-url round-trip.
-- happy-dom smoke tests: App+boot mount, paint/undo/redo, save/load/delete slot, preset application, dropper no-op-on-transparent, swatch-tracks-current-alpha, HTML picker drag spam guard, superTileCanvas content invalidation, share-URL boot decode loop, line tool snapshot-revert invariant, and the saveSlot empty-name guard.
-- 84 assertions / 13 test files / all green.
+- Pure domain: color / pattern / mirror / history / tools / randomize / presets / share-url round trip.
+- happy-dom smoke tests: App+boot mount, paint/undo/redo, save/load/delete slot, preset application, dropper no-op-on-transparent, swatch-tracks-current-alpha, HTML picker drag spam guard, superTileCanvas content invalidation, share-URL boot decode loop, hashchange re-apply, line tool snapshot-revert invariant, saveSlot empty-name guard, primary/secondary color round-trip, share-URL v1 rejection, dropper-hover gate, dropper auto-revert, new-session defaults, `requestOpenColorPicker` API.
+- 122 assertions / 17 test files / all green.
