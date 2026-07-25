@@ -1,8 +1,8 @@
 # pixel-patterns — Redesign Spec
 
-> A small, fast, opinionated tool for drawing tiny pixel patterns and watching them tile seamlessly across the whole page. Built to be a delight to use, beautiful to look at, and trivial to share.
+> A tool for drawing tiny pixel patterns that tile seamlessly across the whole page.
 
-This document is the design contract for the complete rewrite on branch `ai-overhaul-attempt-01`. The original `script.js` / `index.html` / `style.css` was deleted; this is a from-scratch rebuild. Subsequent revisions (the v2 polish pass + this v3 pass) are annotated inline where they changed behaviour — flagged with **[v2]** or **[v3]**.
+This document is the design contract for the rewrite that replaced the original `script.js` / `index.html` / `style.css` with a typed, modular codebase. Later revisions (v2 / v3 / v4 / v5 polish passes) are captured in §13.
 
 ---
 
@@ -359,7 +359,7 @@ Everything else from those TODO lines — pixel-perfect rendering, logarithmic t
 
 - Static build via Vite (`vite build` → `dist/`).
 - `vite.config.ts` sets `base: '/pixel-patterns/'` so the bundle URLs match the live GitHub Pages subpath that the original already serves.
-- A `.github/workflows/deploy.yml` builds on push to `master` and force-pushes `dist/` to a `gh-pages` branch. **Local-only delivery** for this branch's work — switching the GitHub Pages source from `master` root to `gh-pages` root is a one-click user action I will *document* but not flip.
+- A `.github/workflows/deploy.yml` builds on push to `master` and publishes `dist/` to a `gh-pages` branch via `actions/deploy-pages`. Switch the repo's Pages source to the `gh-pages` branch (root) on the first run; documented in the workflow itself.
 - `.gitignore` covers `node_modules/` and `dist/`.
 - A new `README.md` documents the stack, the design, how to run dev, how to build, and how to deploy. The original "Vanilla JS" badge is replaced with an honest "Preact + TS + Vite" thumbnail and a paragraph linking to the spec.
 
@@ -375,29 +375,16 @@ Everything else from those TODO lines — pixel-perfect rendering, logarithmic t
 
 ---
 
-## 12. Open questions for the operator
+## 12. Post-v1 revisions
 
-I'm going to proceed with the design above unless you object. Things I made opinionated calls on, in case you want to push back before I build:
+This section logs the deltas that landed after v1 — the v2 / v3 / v4 / v5 polish passes. Kept here so the SPEC stays a useful contract for the current code, not just the original promise.
 
-1. **Stack**: TS + Vite + Preact + Signals, hand-rolled CSS. This adds a build step to a project that's been "Vanilla JS". I judge the quality/scalability win worth it. If you want zero build step, I have an alternate plan (vanilla + native ES modules + lit-html, slightly less ergonomic).
-2. **Default mirror mode = `HV`**: this flips the app from "draw whatever, maybe it tiles" to "everything you draw tiles by default". Big opinion change; I think it's the right call.
-3. **No image import / no layers / no plugins.** Out of scope.
-4. **Page background becomes your live pattern.** This is the visual headliner. If you find it visually noisy in practice, we can scale it down or default it off — flag it when you see it.
-
-I'll write the spec to a `SPEC.md` at repo root and commit it on this branch so the design has a permanent home. Then I'll scaffold and build.
-
----
-
-## 13. Post-v1 revisions
-
-This section logs the deltas from the v1 implementation that landed in the v2 polish pass and the v3 pass. Kept here so the SPEC stays a useful contract for the current code, not just the original promise.
-
-### v2 polish (driven by operator UX feedback)
+### v2 polish (UX feedback)
 
 - **Page background & favicon not updating on paint** — v1 had its own data-URL cache in `page-bg.ts` and `favicon.ts` keyed on `mode:w:h:cellPx:tileW*tileH` — *no content fingerprint*. A paint bumped `rev` and re-ran the effect, but the cache hit so the same stale PNG was re-applied. The fix moved the platform cache entirely into `superTileCanvas` (which DOES fingerprint content), and the page-bg/favicon rAF-loop always re-rasterizes against that memoised canvas.
 - **`showGridLines` checkbox was a no-op** — the renderer was always drawing grid lines. Now gated by a `showGridLines` field on `GridRenderInput`, threaded through every call site.
 - **Dropper reset brush over transparent cells** — `pickColor(0)` previously reset the brush to default magenta. It's now a no-op, so an accidental dropper over empty space leaves the brush untouched.
-- **Recents semantics redesigned** — recents dedup by RGB only (so picking the same hue at two different alphas stays one entry, refreshed at the current alpha). The dock renders recents at the *current* alpha so the panel re-tints in lockstep with the alpha slider, the operator's stated "ideal way to operate." The HTML picker's onInput drives a live preview; onChange (release) is what commits to recents, so dragging through the spectrum only adds one entry per drag.
+- **Recents semantics redesigned** — recents dedup by RGB only (so picking the same hue at two different alphas stays one entry, refreshed at the current alpha). The dock renders recents at the *current* alpha so the panel re-tints in lockstep with the alpha slider. The HTML picker's onInput drives a live preview; onChange (release) is what commits to recents, so dragging through the spectrum only adds one entry per drag.
 - **Mirror-axis overlay toggle moved** from DimensionsDock up next to the mirror-mode segmented control on the Toolbar.
 - **ShareModal URL race fixed** — v1 built the share URL inside `useEffect`, so there was a frame on mount where the input/anchor's `href` was empty and a fast Cmd-C or "Open in new tab" click grabbed an empty URL. Now built synchronously in a `useState` lazy initializer.
 - **Export modal gained two modes**: Single tile (one super-tile × cellScale — for OS-level wallpaper tiling, where the OS repeats the pattern itself) and Tile to size (presets FHD/QHD/4K/square, screen-resolution auto-detect, custom WxH — for one-image desktop wallpapers where the tiling is baked into the output).
@@ -431,7 +418,7 @@ This section logs the deltas from the v1 implementation that landed in the v2 po
 - **Color picker hotkey: `C` for the active slot, `Shift+C` for the secondary slot.** `store.requestOpenColorPicker(slot)` action bumps an `openPickerRequest` signal the ColorDock subscribes to; the dock calls `HTMLInputElement.showPicker()` (with a `.click()` fallback) and temporarily switches the active slot when `Shift+C` requested, restoring on `change` or `blur`. Clear-pattern moved off `C` to `Backspace` / `Delete` so a single keystroke no longer wipes a pattern.
 - **New-session defaults changed**: Width × Height = 7 × 7, Cell size = 3, Page scale = 1 (was 5 × 5 / 8 / 4). A 7×7 HV-mirrored super-tile becomes a 14×14 at 42×42 device px — a comfortably dense wallpaper. Page scale 1 = one super-tile cell per device pixel on screen, so the page background reads at real pixel density.
 - **Active tool / mirror-mode button is visibly pressed.** Previous `accent-weak` background was easy to miss on the dark surface; replaced with solid `--accent` fill + white text + `font-weight: 600`, matching the Photoshop / Aseprite convention for the active tool in a group.
-- **v1 (single-color) share URL back-compat dropped.** The codec now accepts exactly one format — the 8-field v2 form `#p=WxH,mode,hexP,alpha,hexS,alphaS,slot,cells`. Old 5-field URLs decode cleanly to null. Per operator: nothing's published yet, so the v1 shim was pure complexity for zero reachable users.
+- **v1 (single-color) share URL back-compat dropped.** The codec now accepts exactly one format — the 8-field v2 form `#p=WxH,mode,hexP,alpha,hexS,alphaS,slot,cells`. Old 5-field URLs decode cleanly to null. Nothing's published yet, so the v1 shim was pure complexity for zero reachable users.
 
 ### History byte-budget (v3 → v4 boundary)
 
