@@ -1,0 +1,58 @@
+/* Design tokens. Light + dark themes via `body[data-theme]`. */
+
+:root {
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+
+  --gap: 12px;
+
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  --transition-fast: 80ms ease;
+  --transition: 150ms ease;
+}
+
+body[data-theme="dark"] {
+  --surface-0: #0d0f14;
+  --surface-1: #161922;
+  --surface-2: #1d212c;
+  --surface-3: #28304080;
+  --text-1: #ebeef6;
+  --text-2: #a7aec0;
+  --text-3: #6f7889;
+  --border: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.18);
+  --accent: #6366f1;
+  --accent-weak: rgba(99, 102, 241, 0.18);
+  --danger: #ef4444;
+  --danger-weak: rgba(239, 68, 68, 0.16);
+  --grid-line: rgba(255, 255, 255, 0.10);
+  --mirror-axis: rgba(255, 198, 88, 0.55);
+  --hover-outline: rgba(255, 255, 255, 0.55);
+  --checker-a: rgba(255, 255, 255, 0.05);
+  --checker-b: transparent;
+}
+
+body[data-theme="light"] {
+  --surface-0: #f6f7fb;
+  --surface-1: #ffffff;
+  --surface-2: #ffffff;
+  --surface-3: #eef0f5;
+  --text-1: #1c1f2c;
+  --text-2: #5c626f;
+  --text-3: #9097a4;
+  --border: rgba(0, 0, 0, 0.10);
+  --border-strong: rgba(0, 0, 0, 0.20);
+  --accent: #6366f1;
+  --accent-weak: rgba(99, 102, 241, 0.14);
+  --danger: #dc2626;
+  --danger-weak: rgba(220, 38, 38, 0.12);
+  --grid-line: rgba(0, 0, 0, 0.14);
+  --mirror-axis: rgba(220, 100, 38, 0.65);
+  --hover-outline: rgba(0, 0, 0, 0.55);
+  --checker-a: rgba(0, 0, 0, 0.04);
+  --checker-b: transparent;
+}
