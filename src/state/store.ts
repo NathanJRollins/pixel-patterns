@@ -38,7 +38,36 @@ const DEFAULT_HEX = "#cc33cc"; // callback to original default color (primary)
 const DEFAULT_SECONDARY_HEX = "#ffffff"; // MSPaint-style secondary default
 const DEFAULT_RECENT_MAX = 24; // doubled per operator request — there's UI room
 
+/**
+ * Schema version for the {@link Savestate} payload. Bump when an
+ * incompatible field change lands, and add a row to {@link MIGRATIONS}
+ * describing how to upgrade older records in place. The persisted
+ * payload at any moment carries whatever version was current when it
+ * was last saved (or no `version` at all for records saved before this
+ * field existed — treated as version ``0`` by {@link migrateSavestate}).
+ *
+ * Backwards-compat policy: any prior-version record must continue to
+ * restore at least as gracefully as before — we never silently drop
+ * user data, we never throw on unknown fields, we always "upgrade" or
+ * "best-effort". A future *removal* of a field that today exists is
+ * forward-compatible (read-side gates should make us tolerate its
+ * absence) provided the new code doesn't *rely* on it. A future *rename*
+ * or *re-interpretation* must ship with a real migration step here —
+ * version-only behaviour changes are forbidden.
+ *
+ * This is the addressing mechanism the operator asked for in #4 in
+ * todo.txt — pushing a new deployment shouldn't wipe a returning user's
+ * autosave unless we deliberately bumped the schema version AND shipped
+ * a migration (which can be a no-op for non-breaking changes).
+ */
+export const SAVE_STATE_VERSION = 1;
+
 export interface Savestate {
+  /** Schema version. Older records may lack this; {@link migrateSavestate}
+   * normalises the gap. Future fields added to Savestate that aren't a
+   * breaking change should NOT bump this — only renames / reinterpreted
+   * shapes need a bump. */
+  version: number;
   pattern: string; // encoded
   mirrorMode: MirrorMode;
   tool: Tool;
@@ -64,6 +93,24 @@ export interface SlotSerialized {
   thumb: string; // dataURL
   pattern: string; // encoded
   mirrorMode: MirrorMode;
+}
+
+/**
+ * Collision strategy for {@link Store.mergeSlots} — addressed by the
+ * import flow (#9 in todo.txt):
+ *
+ *   - ``replace`` — overwrite an existing same-named slot.
+ *   - ``suffix``  — append the incoming slot with ``Name (2)``, ``(3)`` …
+ *                   so it lands without touching the existing one.
+ *   - ``skip``    — drop the incoming colliding slot entirely.
+ */
+export type SlotMergeStrategy = "replace" | "suffix" | "skip";
+
+/** Tally result returned from {@link Store.mergeSlots}. */
+export interface SlotMergeStats {
+  added: number;
+  replaced: number;
+  skipped: number;
 }
 
 /** Which color slot is currently 'active' — i.e. the one the picker / alpha
@@ -421,19 +468,36 @@ bgScale = signal<number>(1);
     const slot = which ?? this.activeColorSlot.value;
     const color = this.readSlot(slot);
     if (target === color) return;
+    // Flood fill via an iterative 4-way DFS. We write directly to `p.cells`
+    // (with the same mirror expansion `applyCells` would apply) and bump
+    // `rev` exactly once at the end. The previous implementation called
+    // `applyCells([[cx, cy]], color)` per visited cell — and `applyCells`
+    // ends with `bumpRev()` — so a 64×64 fill synchronously wrote `rev`
+    // ~4096×, each notifying every rev-subscriber (draw panel repaint,
+    // preview panel repaint, favicon repaint, page-bg rasterize) and
+    // allocating a fresh `[[cx, cy]]` per cell. Empirically that took
+    // ~20s on a 64×64 grid. Batching the rev bump collapses the work to
+    // a single invalidate per fill, taking the same fill to single-digit
+    // milliseconds.
+    const mode = this.mirrorMode.value;
+    const W = p.width;
+    const H = p.height;
     const stack: Array<[number, number]> = [[x, y]];
-    const visited = new Uint8Array(p.width * p.height);
+    const visited = new Uint8Array(W * H);
+    let changed = false;
     while (stack.length) {
       const [cx, cy] = stack.pop()!;
-      if (cx < 0 || cy < 0 || cx >= p.width || cy >= p.height) continue;
-      const idx = cy * p.width + cx;
+      if (cx < 0 || cy < 0 || cx >= W || cy >= H) continue;
+      const idx = cy * W + cx;
       if (visited[idx]) continue;
       visited[idx] = 1;
       if (p.cells[idx] !== target) continue;
-      this.applyCells([[cx, cy]], color);
+      for (const [mx, my] of mirrorCell(cx, cy, W, H, mode)) {
+        if (setCell(p, mx, my, color)) changed = true;
+      }
       stack.push([cx + 1, cy], [cx - 1, cy], [cx, cy + 1], [cx, cy - 1]);
     }
-    this.bumpRev();
+    if (changed) this.bumpRev();
   }
 
   /** Mirrored write of `c` at each `(x,y)` in `hits`. Mutates the live
@@ -603,6 +667,10 @@ bgScale = signal<number>(1);
 
   snapshot(): Savestate {
     return {
+      // Stamped at the top so a future migration knows which schema it
+      // received. See {@link SAVE_STATE_VERSION} + {@link migrateSavestate}
+      // for the upgrade path.
+      version: SAVE_STATE_VERSION,
       pattern: encodePattern(this.pattern.value),
       mirrorMode: this.mirrorMode.value,
       tool: this.tool.value,
@@ -623,44 +691,117 @@ bgScale = signal<number>(1);
     };
   }
 
-  restore(s: Partial<Savestate>): void {
-    if (s.pattern) {
-      const p = decodePattern(s.pattern);
+  restore(s: Partial<Savestate>, opts: { skipSlots?: boolean } = {}): void {
+    // Walk any outstanding migrations first so the read-side code below
+    // sees a record at the current schema. {@link migrateSavestate}
+    // is a no-op for the v1 ⇄ v0 shapes (the only difference is the
+    // addition of the `version` field itself); future renames /
+    // re-interpretations would live as `MIGRATIONS` rows. If the
+    // record is from a *future* version (forward-version mismatch) we
+    // log and best-effort restore rather than throw.
+    const migrated = migrateSavestate(s);
+    if (migrated.pattern) {
+      const p = decodePattern(migrated.pattern);
       if (p) this.pattern.value = p;
     }
-    if (s.mirrorMode) this.mirrorMode.value = s.mirrorMode;
-    if (s.tool) this.tool.value = s.tool;
+    if (migrated.mirrorMode) this.mirrorMode.value = migrated.mirrorMode;
+    if (migrated.tool) this.tool.value = migrated.tool;
     // Primary
-    if (typeof s.hex === "string") {
-      const alpha = typeof s.alpha01 === "number" ? s.alpha01 : 1;
-      this.primaryColor.value = hexToCell(s.hex, alpha);
+    if (typeof migrated.hex === "string") {
+      const alpha = typeof migrated.alpha01 === "number" ? migrated.alpha01 : 1;
+      this.primaryColor.value = hexToCell(migrated.hex, alpha);
     }
-    if (typeof s.alpha01 === "number") this.primaryAlpha01.value = s.alpha01;
+    if (typeof migrated.alpha01 === "number") this.primaryAlpha01.value = migrated.alpha01;
     // Secondary (backward-compat: defaults to white at full opacity if absent)
-    if (typeof s.secondaryHex === "string") {
-      const alpha = typeof s.secondaryAlpha01 === "number" ? s.secondaryAlpha01 : 1;
-      this.secondaryColor.value = hexToCell(s.secondaryHex, alpha);
+    if (typeof migrated.secondaryHex === "string") {
+      const alpha = typeof migrated.secondaryAlpha01 === "number" ? migrated.secondaryAlpha01 : 1;
+      this.secondaryColor.value = hexToCell(migrated.secondaryHex, alpha);
     } else if (!this.secondaryColor.value) {
       this.secondaryColor.value = makeDefaultSecondaryColor();
     }
-    if (typeof s.secondaryAlpha01 === "number") {
-      this.secondaryAlpha01.value = s.secondaryAlpha01;
+    if (typeof migrated.secondaryAlpha01 === "number") {
+      this.secondaryAlpha01.value = migrated.secondaryAlpha01;
     }
-    if (s.activeColorSlot === "primary" || s.activeColorSlot === "secondary") {
-      this.activeColorSlot.value = s.activeColorSlot;
+    if (migrated.activeColorSlot === "primary" || migrated.activeColorSlot === "secondary") {
+      this.activeColorSlot.value = migrated.activeColorSlot;
     }
     this.syncColorProjection();
-    if (Array.isArray(s.recentCells)) this.recentCells.value = s.recentCells as Cell[];
-    if (typeof s.previewCellScale === "number") this.previewCellScale.value = s.previewCellScale;
-    if (typeof s.bgScale === "number") this.bgScale.value = s.bgScale;
-    if (typeof s.showPageBg === "boolean") this.showPageBg.value = s.showPageBg;
-    if (typeof s.showGridLines === "boolean") this.showGridLines.value = s.showGridLines;
-    if (typeof s.showMirrorAxis === "boolean") this.showMirrorAxis.value = s.showMirrorAxis;
-    if (s.theme === "light" || s.theme === "dark") this.setTheme(s.theme);
-    if (typeof s.saveEnabled === "boolean") this.saveEnabled.value = s.saveEnabled;
-    if (Array.isArray(s.slots)) this.slots.value = s.slots;
+    if (Array.isArray(migrated.recentCells)) this.recentCells.value = migrated.recentCells as Cell[];
+    if (typeof migrated.previewCellScale === "number") this.previewCellScale.value = migrated.previewCellScale;
+    if (typeof migrated.bgScale === "number") this.bgScale.value = migrated.bgScale;
+    if (typeof migrated.showPageBg === "boolean") this.showPageBg.value = migrated.showPageBg;
+    if (typeof migrated.showGridLines === "boolean") this.showGridLines.value = migrated.showGridLines;
+    if (typeof migrated.showMirrorAxis === "boolean") this.showMirrorAxis.value = migrated.showMirrorAxis;
+    if (migrated.theme === "light" || migrated.theme === "dark") this.setTheme(migrated.theme);
+    if (typeof migrated.saveEnabled === "boolean") this.saveEnabled.value = migrated.saveEnabled;
+    // Slots: gated by the new `opts.skipSlots` flag so the import flow
+    // (#9 in todo.txt) can apply the rest of the Savestate WITHOUT
+    // overwriting the user's existing slot list — leaving the merge to
+    // `mergeSlots` below for collision strategies.
+    if (!opts.skipSlots && Array.isArray(migrated.slots)) this.slots.value = migrated.slots;
     this.history.reset(this.pattern.value);
     this.bumpRev();
+  }
+
+  /**
+   * Merge incoming slots into the user's existing saves. Three collision
+   * strategies — see {@link SlotMergeStrategy}. Returns a small tally so
+   * the import modal (#9 in todo.txt) can toast "Added X / replaced Y /
+   * skipped Z".
+   *
+   * ``replace`` (default) — overwrite an existing same-named slot. The
+   * operation is limited to colliding slots — every other slot in the
+   * existing list is preserved (as opposed to ``restore({slots})`` which
+   * replaces the whole list).
+   *
+   * ``suffix`` — non-destructive. Find the next unique ``Name (N)`` /
+   * ``Name (2)`` where ``N`` increments; rename the incoming slot to
+   * that and add it. Existing same-named slots are left untouched.
+   *
+   * ``skip`` — non-destructive. Collisions don't land at all; only the
+   * incoming slots whose names don't match an existing one are added.
+   */
+  mergeSlots(
+    incoming: SlotSerialized[],
+    strategy: SlotMergeStrategy = "replace",
+  ): SlotMergeStats {
+    const existing = this.slots.value.slice();
+    const names = new Set(existing.map((s) => s.name));
+    let added = 0;
+    let replaced = 0;
+    let skipped = 0;
+    for (const raw of incoming) {
+      const trimmed = raw.name?.trim();
+      if (!trimmed) continue;
+      if (names.has(trimmed)) {
+        if (strategy === "replace") {
+          const idx = existing.findIndex((s) => s.name === trimmed);
+          if (idx >= 0) {
+            existing[idx] = { ...raw, name: trimmed };
+            replaced++;
+          }
+        } else if (strategy === "skip") {
+          skipped++;
+        } else {
+          // suffix: find a unique ``Name (N)``, N starting at 2.
+          let counter = 2;
+          let candidate = `${trimmed} (${counter})`;
+          while (names.has(candidate)) {
+            counter++;
+            candidate = `${trimmed} (${counter})`;
+          }
+          existing.unshift({ ...raw, name: candidate });
+          names.add(candidate);
+          added++;
+        }
+      } else {
+        existing.unshift({ ...raw, name: trimmed });
+        names.add(trimmed);
+        added++;
+      }
+    }
+    this.slots.value = existing;
+    return { added, replaced, skipped };
   }
 
   clearAllData(): void {
@@ -706,3 +847,84 @@ function thumbFromPattern(p: Pattern, mode: MirrorMode): string {
 export const store = new Store();
 export type { Theme, Tool, MirrorMode };
 export type StoreInstance = typeof store;
+
+// ---------------------------------------------------------------------------
+// Savestate schema upgrade machinery.
+//
+// This is the addressing mechanism for #4 in todo.txt: a *structured,
+// versioned* migration ladder so a returning user's autosave (saved by an
+// older build that wouldn't have known about new fields / a renamed hook)
+// still loads gracefully on a fresh build, rather than silently half-
+// restoring or throwing on `JSON.parse`. New builds always ship with
+// ``SAVE_STATE_VERSION`` at the head of the ladder; each prior version has
+// an explicit `migrate(oldSnapshot): newSnapshot` step in ``MIGRATIONS``.
+//
+// Today (v1) the migrations table is empty — v0 corresponds exactly to the
+// shape this code restores under the defensive read-side conditionals in
+// `restore()`, and the only addition the current build makes is the
+// `version` field itself. The scaffold is in place so the first future
+// breaking change has a clear home.
+// ---------------------------------------------------------------------------
+
+/**
+ * Per-version migrations. Each function transforms a snapshot at version
+ * ``from`` into a snapshot at version ``from + 1``. Missing entries mean
+ * "identity (no migration needed)" — which is true for the v0 → v1 step at
+ * head, since the current schema is a strict superset of v0 with no field
+ * that was renamed OR had its interpretation changed.
+ *
+ * Add a row at key ``(SAVE_STATE_VERSION + 1)`` when shipping the next
+ * breaking change. The function MUST return a new object (it doesn't have
+ * to copy fields it hasn't touched) and SHOULD set ``version`` to its own
+ * target if it touches the field.
+ */
+const MIGRATIONS: Partial<Record<number, (s: Partial<Savestate>) => Partial<Savestate>>> = {
+  // 1: from-v0-to-v1 migration — left implicit because the only delta
+  //    is the addition of the `version` field itself, which
+  //    `migrateSavestate` stamps below. Future real-world shape changes
+  //    would slot their transform function in here.
+};
+
+/**
+ * Bring an arbitrary snapshot up to {@link SAVE_STATE_VERSION}, applying
+ * the chain of migrations. Records without a `version` field are treated
+ * as v0 — that covers the realistic case of a returning user whose
+ * autosave was written by an older build that predated the `version`
+ * field.
+ *
+ * Forward-version mismatches (a snapshot stamped with a *newer* version
+ * than the running build was written by) log a warning and best-effort
+ * restore rather than throw: better to half-restore than to wipe a
+ * returning user's data on a downgrade.
+ */
+export function migrateSavestate(s: Partial<Savestate>): Partial<Savestate> {
+  let version = typeof s.version === "number" ? s.version : 0;
+  let out = s;
+  while (version < SAVE_STATE_VERSION) {
+    const step = MIGRATIONS[version + 1];
+    if (!step) {
+      // No explicit migration registered for this step — by convention
+      // (and the current empty MIGRATIONS table) this means "identity":
+      // every prior-version snapshot's fields already match what the
+      // current `restore()` reads defensively. We stamp `version` so the
+      // next save persists it and skip ahead.
+      out = { ...out, version: version + 1 };
+    } else {
+      out = step(out);
+      out.version = (out.version ?? 0) || (version + 1);
+    }
+    version = out.version ?? version + 1;
+    // Guard against pathological cycles / bad migration that didn't
+    // bump version.
+    if ((out.version ?? 0) <= (s.version ?? 0) && version <= (s.version ?? 0)) break;
+  }
+  if (version > SAVE_STATE_VERSION) {
+    // The snapshot was written by a newer build. Best-effort: don't
+    // throw, don't wipe. The defensive read-side in `restore()` will
+    // happily skip any unfamiliar fields and apply the rest.
+    console.warn(
+      `[pixel-patterns] autosave version ${version} > current ${SAVE_STATE_VERSION}; restoring best-effort.`,
+    );
+  }
+  return out;
+}

@@ -1,66 +1,26 @@
-import { getCell, setCell } from "./pattern.js";
 import { mirrorCell } from "./mirror.js";
-import type { Cell, MirrorMode, Pattern, Tool } from "./types.js";
+import type { MirrorMode } from "./types.js";
 
 /**
- * Tool behaviours.
+ * Tool-behaviour helpers that are pure (no Preact, no store).
  *
- * Each tool produces a list of grid cells to mutate for a given pointer
- * event. Pointer → cell mapping happens in the render/UI layer; this module
- * owns *what happens to the pattern* once a cell is hit.
+ * Mutation paths (pencil / eraser / bucket / dropper) live in the store
+ * (`Store.bucketFillAt`, `Store.paintAt`, `Store.paintLine`) so they can
+ * bump `rev`, thread the active slot's colour, and push history. This
+ * module only owns {@link bridgeLine}, the Bresenham helper the UI calls
+ * on `pointermove` to avoid skipping cells on fast drags.
  *
- * A "stroke" is the sequence of mutations between pointerdown and
- * pointer-up. `applyTool` mutates the pattern in place under that cell and
- * mirrors it under the current mode. The UI batches stroke end as the
- * history_push boundary.
- *
- * Drag continuity: when the pointer moves fast enough to skip cells, the UI
- * bridge calls {@link bridgeLine} to Bresenham-fill every cell between the
- * previous and current hit.
+ * A "stroke" is the sequence of mutations between pointer-down and
+ * pointer-up. Drag continuity: when the pointer moves fast enough to
+ * skip cells, the UI bridge calls {@link bridgeLine} to Bresenham-fill
+ * every cell between the previous and current hit, with mirror expansion
+ * applied per hit so the fill lands symmetrically.
  */
 
-export interface ToolContext {
-  pattern: Pattern;
-  color: Cell;
-  mirrorMode: MirrorMode;
-  /** Whether this is the first cell of a new stroke. */
-  firstOfStroke: boolean;
-}
-
-export interface ToolResult {
-  /** Whether any cell actually changed. */
-  changed: boolean;
-  /** If `dropper` was active, the sampled color (caller writes it to state). */
-  sampled?: Cell;
-}
-
-/** Apply a tool at a single grid cell. Mutates `ctx.pattern` in place. */
-export function applyToolAt(
-  tool: Tool,
-  x: number,
-  y: number,
-  ctx: ToolContext,
-): ToolResult {
-  switch (tool) {
-    case "pencil":
-      return paintCells(tool, [[x, y]], ctx);
-    case "eraser":
-      return paintCells(tool, [[x, y]], ctx);
-    case "bucket":
-      return bucketFill(ctx.pattern, x, y, ctx.color, ctx.mirrorMode);
-    case "dropper":
-      return { changed: false, sampled: sampleCell(ctx.pattern, x, y) };
-    case "line":
-      // The UI manages the line's anchor via {@link bridgeLine}; the per-cell
-      // action for a line stroke is the same as pencil.
-      return paintCells(tool, [[x, y]], ctx);
-  }
-}
-
 /**
- * Bridge between two cells (inclusive) using Bresenham. Returns the ordered
- * list of cells to visit, with mirror expansion. Used by the UI on
- * `pointermove` to avoid skipping cells on fast drags.
+ * Bridge between two cells (inclusive) using Bresenham. Returns the
+ * ordered list of cells to visit, with mirror expansion. Used by the UI
+ * on `pointermove` to avoid skipping cells on fast drags.
  */
 export function bridgeLine(
   x0: number,
@@ -99,58 +59,4 @@ export function bridgeLine(
     }
   }
   return out;
-}
-
-function paintCells(
-  tool: Tool,
-  hits: Array<[number, number]>,
-  ctx: ToolContext,
-): ToolResult {
-  const { pattern, color, mirrorMode } = ctx;
-  const c = tool === "eraser" ? 0 : color;
-  let changed = false;
-  for (const [hx, hy] of hits) {
-    for (const [px, py] of mirrorCell(hx, hy, pattern.width, pattern.height, mirrorMode)) {
-      if (setCell(pattern, px, py, c)) changed = true;
-    }
-  }
-  return { changed };
-}
-
-/** Flood fill in the contiguous region of the cell's current color. */
-function bucketFill(
-  pattern: Pattern,
-  x: number,
-  y: number,
-  color: Cell,
-  mode: MirrorMode,
-): ToolResult {
-  if (x < 0 || y < 0 || x >= pattern.width || y >= pattern.height) {
-    return { changed: false };
-  }
-  const target = getCell(pattern, x, y);
-  if (target === color) return { changed: false };
-  const W = pattern.width;
-  const H = pattern.height;
-  const visited = new Uint8Array(W * H);
-  const stack: Array<[number, number]> = [[x, y]];
-  let changed = false;
-  while (stack.length) {
-    const [cx, cy] = stack.pop()!;
-    if (cx < 0 || cy < 0 || cx >= W || cy >= H) continue;
-    const idx = cy * W + cx;
-    if (visited[idx]) continue;
-    visited[idx] = 1;
-    if (getCell(pattern, cx, cy) !== target) continue;
-    // Mirror the fill writes.
-    for (const [mx, my] of mirrorCell(cx, cy, W, H, mode)) {
-      if (setCell(pattern, mx, my, color)) changed = true;
-    }
-    stack.push([cx + 1, cy], [cx - 1, cy], [cx, cy + 1], [cx, cy - 1]);
-  }
-  return { changed };
-}
-
-function sampleCell(pattern: Pattern, x: number, y: number): Cell {
-  return getCell(pattern, x, y);
 }

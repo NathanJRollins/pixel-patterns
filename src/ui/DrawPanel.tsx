@@ -174,6 +174,16 @@ export function DrawPanel() {
 
   function handlePointerDown(e: PointerEvent) {
     e.preventDefault();
+    // Move focus to the canvas so the page-wide `keydown` handler doesn't
+    // bail on a stray INPUT/TEXTAREA (the save-slot name input or any
+    // slider). `preventDefault` blocks the browser's automatic
+    // focus-on-mousedown for most inputs, so we focus the canvas
+    // explicitly here. `tabindex={-1}` below keeps it out of the tab
+    // order while still making it a focus sink. Without this, after a
+    // save-with-Enter (the slot-input re-focused itself before the fix)
+    // or after dragging a slider, `Ctrl+Z` silently no-opped until the
+    // user clicked somewhere inert — exactly the operator's report.
+    (e.currentTarget as HTMLElement).focus?.();
     (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
     trackPointer(e);
     pointerStartRef.current = { x: e.clientX, y: e.clientY };
@@ -386,6 +396,10 @@ export function DrawPanel() {
         <canvas
           ref={canvasRef}
           class="drawgrid"
+          // Sink focus onto the canvas so a stray click here clears any
+          // lingering input focus — see handlePointerDown for the full
+          // reasoning. `-1` keeps it out of the keyboard tab order.
+          tabindex={-1}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}

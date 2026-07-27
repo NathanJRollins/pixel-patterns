@@ -4,6 +4,23 @@
   box-sizing: border-box;
 }
 
+/* Page-bg target canvas (#3 in todo.txt). Sits behind every UI affordance.
+   `image-rendering: pixelated` ensures crisp cells even when the device
+   pixel ratio is fractional or the browser rounds CSS-pixel-to-backing
+   boundaries. */
+.page-bg-canvas {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  display: block;
+  pointer-events: none;
+  z-index: -1;
+  background: transparent;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
 html,
 body {
   margin: 0;
@@ -148,6 +165,14 @@ canvas.drawgrid {
 canvas.drawgrid {
   touch-action: none;
   cursor: crosshair;
+}
+/* The canvas is a focus sink (tabindex=-1) so clicking it clears any
+   lingering input focus that would otherwise swallow `Ctrl+Z`. Programmatic
+   focus shouldn't render a ring — the canvas isn't keyboard-interactive
+   in any way that a ring would help guide — and `tabindex=-1` keeps it
+   out of the tab order anyway, so suppressing the outline here is safe. */
+canvas.drawgrid:focus {
+  outline: none;
 }
 
 .dock-row {

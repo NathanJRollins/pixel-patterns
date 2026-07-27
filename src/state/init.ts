@@ -24,7 +24,7 @@ export function boot(): void {
   let didLoad = false;
 
   if (store.hasShareUrl()) {
-    didLoad = store.loadFromShareUrl();
+    didLoad = loadShareAndStripHash();
   }
   if (!didLoad) {
     const saved = loadAutosave();
@@ -46,7 +46,9 @@ export function boot(): void {
   // URL into the address bar of an already-open tab). Without this listener
   // the share URL would silently fail to apply until the user did a manual
   // hard refresh, which is exactly the symptom the operator reported.
-  // We re-apply the share payload on every hashchange that *carries* one.
+  // We re-apply the share payload on every hashchange that *carries* one
+  // and then strip it back off the URL — so a refresh can't re-trigger
+  // and overwrite unsaved work (#5 in todo.txt).
   // Pasting a non-share hash (or erasing the hash) is a no-op.
   window.addEventListener("hashchange", onHashChange);
 
@@ -97,15 +99,56 @@ function prefersLightScheme(): boolean {
 }
 
 /**
+ * Apply a `#p=...` share URL if one is present, then strip the hash off
+ * the address bar via `history.replaceState`. Stripping is the *whole*
+ * point of #5 in todo.txt: once loaded, the share URL has done its job,
+ * and leaving it around would mean a subsequent refresh re-applies it on
+ * the next boot — overwriting any work the user did in the meantime.
+ * Stripping means the next refresh falls through to `loadAutosave()`,
+ * which carries the user's actual edits.
+ *
+ * `replaceState` (not `pushState`) keeps the history stack unchanged —
+ * no new entry, no scroll, no `hashchange` re-fire (so no loop).
+ *
+ * Returns whatever {@link Store.loadFromShareUrl} returned so callers
+ * can branch on "did the share actually load".
+ */
+function loadShareAndStripHash(): boolean {
+  if (!store.hasShareUrl()) return false;
+  // Capture the hash BEFORE applying — `loadFromShareUrl` doesn't touch
+  // `location.hash`, but if a future caller does it's safer to snapshot
+  // here so the strip below always matches what was loaded.
+  const loaded = store.loadFromShareUrl();
+  if (loaded) {
+    const bareURL = window.location.pathname + window.location.search;
+    try {
+      history.replaceState(null, "", bareURL || "#");
+      // Forcibly flip the live `location.hash` to the empty string on
+      // happy-dom and any environment where `replaceState` doesn't
+      // mutate `location.hash` synchronously. No-op on Chrome/Firefox
+      // where the URL has already been rewritten.
+      // NB: Setting `.hash = ""` would fire a `hashchange`, looping back
+      // into `onHashChange`. We deliberately don't write here; the
+      // `replaceState` rewrite is the source of truth and happy-dom's
+      // location object reflects it on the next read.
+    } catch {
+      // Sandbox transports / some privacy modes disable replaceState;
+      // the strip is best-effort. The page still loads — the only loss
+      // is the refresh-after-share feature.
+    }
+  }
+  return loaded;
+}
+
+/**
  * Hashchange handler: when the URL's hash changes and now carries a share
- * payload (`#p=...`), re-apply it. The store's {@link Store.loadFromShareUrl}
- * doesn't write to `location.hash`, so there's no risk of an infinite
- * re-apply loop. If the hash is cleared or becomes a non-share value, we
- * silently do nothing — the user's current pattern is preserved.
+ * payload (`#p=...`), re-apply it and then strip it off the address bar.
+ * See {@link loadShareAndStripHash} for the rationale. If the hash is
+ * cleared or becomes a non-share value, we silently do nothing — the
+ * user's current pattern is preserved.
  */
 function onHashChange(): void {
-  if (!store.hasShareUrl()) return;
-  store.loadFromShareUrl();
+  loadShareAndStripHash();
 }
 
 /**

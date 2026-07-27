@@ -237,9 +237,9 @@ input[type="text"]:focus {
   border: 1px solid var(--border);
 }
 .chip-label {
-  max-width: 100px;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  /* #2 in todo.txt: drop the 100px cap + ellipsis so longer slot / preset
+     names are fully readable. The chip-row already flex-wraps, so wider
+     chips naturally stack more vertically rather than getting truncated. */
   white-space: nowrap;
 }
 .chip .chip-del {
@@ -436,6 +436,83 @@ input[type="text"]:focus {
   font-size: 13px;
   pointer-events: auto;
   box-shadow: rgba(0, 0, 0, 0.35) 0 4px 12px;
+}
+
+/* Right-click chip menu (#10 in todo.txt). Small, focus-stealing strip
+   of items positioned at the cursor. Lives above the modals in z-order
+   so it isn't covered by a backdrop that may be opening simultaneously. */
+.ctx-menu {
+  position: fixed;
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  min-width: 160px;
+  max-width: 280px;
+  z-index: 3000;
+  box-shadow: rgba(0, 0, 0, 0.45) 0 6px 18px;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  overflow: hidden;
+}
+.ctx-item {
+  background: transparent;
+  border: none;
+  color: var(--text-1);
+  padding: 6px 10px;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.ctx-item:hover:not(:disabled) {
+  background: var(--surface-3);
+}
+.ctx-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.ctx-item:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.ctx-item.ctx-item-danger {
+  color: var(--danger);
+}
+.ctx-item.ctx-item-danger:hover:not(:disabled) {
+  background: var(--danger-weak);
+}
+
+/* Page-wide drop overlay shown when the user is dragging a file onto the
+   window (#9 in todo.txt). Sits above everything else so the reach is
+   unambiguous — the whole window is the target for an incoming save-bundle
+   JSON. Pointer-events disabled so the actual `drop` event lands on the
+   body listener, not this banner. */
+.dropzone-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 30, 40, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 4000;
+  pointer-events: none;
+  backdrop-filter: blur(2px);
+}
+.dropzone-bracket {
+  border: 2px dashed var(--accent);
+  border-radius: var(--radius-md);
+  padding: 32px 56px;
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--text-1);
+  font-size: 16px;
+  font-weight: 600;
 }
 
 /* MSPaint-style overlapping primary/back + secondary/front squares. */

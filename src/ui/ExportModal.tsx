@@ -1,11 +1,22 @@
-import { useState } from "preact/hooks";
+import { useRef, useState } from "preact/hooks";
 import { store } from "../state/store.js";
 import { superTileDimensions } from "../domain/mirror.js";
 import { downloadBlob, exportPatternPng } from "../render/export-png.js";
 import { saveToast } from "./toast.js";
+import {
+  buildSaveBundle,
+  parseSaveBundle,
+  defaultBundleFilename,
+} from "../state/save-export.js";
+import type { ImportSource } from "./ImportModal.js";
 
 interface ExportModalProps {
   onClose: () => void;
+  /** Called with an `ImportSource` so the App can host the ImportModal.
+   * Routing the import-open request through the Export modal keeps the
+   * bundle state machine in App.tsx (the only place that owns the
+   * ImportModal mount). */
+  onOpenImport?: (source: ImportSource) => void;
 }
 
 const PRESET_CELL_SCALES: number[] = [2, 4, 8, 16, 24, 32, 48, 64];
@@ -49,6 +60,39 @@ function detectScreenPreset(): SizePreset {
 
 /** Export the tiled pattern as a PNG at a chosen cell scale. */
 export function ExportModal(props: ExportModalProps) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  function onPickImportFile(): void {
+    fileInputRef.current?.click();
+  }
+
+  function onImportFileChosen(e: Event): void {
+    const input = e.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
+    // RESET the input even if the user cancels, so the same file picked
+    // twice in a row still fires `change` on the second click.
+    input.value = "";
+    if (!file) return;
+    void file
+      .text()
+      .then((text: string) => {
+        const result = parseSaveBundle(text);
+        if (!result.ok) {
+          saveToast(`Import failed: ${result.error}`);
+          return;
+        }
+        props.onOpenImport?.({ bundle: result.bundle, fileName: file.name });
+      })
+      .catch((e: unknown) => saveToast(`Import failed: ${(e as Error).message}`));
+  }
+
+  function onDumpSaveData(): void {
+    const bundle = buildSaveBundle(store.snapshot());
+    const text = JSON.stringify(bundle, null, 2);
+    const blob = new Blob([text], { type: "application/json" });
+    downloadBlob(blob, defaultBundleFilename());
+    saveToast(`Saved ${bundle.state.slots?.length ?? 0} slots to disk`);
+  }
   // The export modal's cell-scale is *bound to* `store.previewCellScale`, not
   // a local copy. Rationale: dragging this slider re-tints the live page
   // background + preview panel in real time, so the user can see how big
@@ -257,6 +301,43 @@ export function ExportModal(props: ExportModalProps) {
           />
           <span>Bilinear smoothing (pixel-perfect off)</span>
         </label>
+
+        {/* Save-data portability panel — #9 in todo.txt:
+              - "Dump save data"   : exports a .pixpat.json file
+                                     containing the Savestate (slots, pattern,
+                                     view settings, palette) for backup /
+                                     transport / migration across devices.
+              - "Import save data" : opens an OS file picker; selecting a
+                                     previously-dumped bundle hands it to App
+                                     so the Import modal opens and lets the
+                                     user pick a collision strategy + decide
+                                     whether to also apply the imported
+                                     pattern / colors / view settings. */}
+        <div class="field">
+          <label>Save data</label>
+          <div class="chip-row">
+            <button class="chip" onClick={onDumpSaveData} title="Export your saves + canvas to a portable JSON file">
+              Dump save data
+            </button>
+            <button
+              class="chip"
+              onClick={onPickImportFile}
+              title="Import a previously-dumped .pixpat.json bundle (drag-drop also works)"
+            >
+              Import save data
+            </button>
+            {/* Hidden file input — opens the OS file picker on click.
+                Doesn't render visibly; loans the click→change plumbing. */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="application/json,.json,.pixpat.json"
+              onChange={onImportFileChosen}
+              style={{ display: "none" }}
+            />
+          </div>
+        </div>
+
         <div class="modal-footer">
           <button class="btn" onClick={props.onClose}>
             Cancel
